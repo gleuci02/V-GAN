@@ -35,7 +35,7 @@ class MMDLossConstrained(nn.Module):
         super().__init__()
         self.kernel = kernel
         self.weight = weight
-        device = torch.device('cuda:0' if torch.cuda.is_available(
+        self.device = torch.device('cuda:0' if torch.cuda.is_available(
         ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
 
     def forward(self, X, Y, U):

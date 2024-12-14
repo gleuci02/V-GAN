@@ -17,6 +17,8 @@ class Encoder(nn.Module): #Not gonna try convolutions yet nor transformers. But 
 class Decoder(nn.Module): #Not gonna try convolutions yet nor transformers. But should keep them in mind.
     def __init__(self, latent_size, img_size):
         super(Decoder, self).__init__()
+        print(latent_size)
+        print(img_size)
         self.main = nn.Sequential(
             nn.Linear(latent_size, 2*latent_size),
             nn.Linear(2*latent_size, 4*latent_size),

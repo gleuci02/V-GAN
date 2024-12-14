@@ -1,10 +1,10 @@
 import torch
 from collections import defaultdict
-from .models.Generator import Generator_big
-from .models.Detector import Detector, Encoder, Decoder
-import torch_two_sample as tts
-from .models.Mmd_loss import MMDLoss
-from .models.Mmd_loss_constrained import MMDLossConstrained
+from models.Generator import Generator_big
+from models.Detector import Detector, Encoder, Decoder
+#import torch_two_sample as tts
+from models.Mmd_loss import MMDLoss
+from models.Mmd_loss_constrained import MMDLossConstrained
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import pandas as pd
@@ -181,6 +181,12 @@ class VGAN:
 
         # MODEL INTIALIZATION#
         self.__latent_size = latent_size = max(int(X.shape[1]/16), 1)
+        print(X.shape)
+        print(X.shape[1])
+        print(X.shape[1])
+        print(X.shape[1])
+        print(X.shape[1])
+        print(X.shape[1])
         ndims = X.shape[1]
         train_size = X.shape[0]
         self.batch_size = min(self.batch_size, train_size)
@@ -268,8 +274,7 @@ class VGAN:
                     self.bandwidth = loss_function.bandwidth
                     batch_loss_D.backward()
                     det_optimizer.step()
-                    detector_loss += float(batch_loss_D.to(
-                        'cpu').detach().numpy())/batch_number
+                    detector_loss += float(batch_loss_D.to('cpu').detach().numpy())/batch_number
                 iternum_d += 1
                 iternum_g = 1
 
