@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch_two_sample as tts
 
 
 class RBF(nn.Module):
@@ -7,7 +8,7 @@ class RBF(nn.Module):
     def __init__(self, n_kernels=5, mul_factor=2.0, bandwidth=None):
         super().__init__()
         self.bandwidth_multipliers = mul_factor ** (
-            torch.arange(n_kernels) - n_kernels // 2).to('cuda')
+            torch.arange(n_kernels) - n_kernels // 2).to('mps')
         self.bandwidth = bandwidth
 
     def get_bandwidth(self, L2_distances):
@@ -30,6 +31,8 @@ class MMDLossConstrained(nn.Module):
 
     def __init__(self, weight, kernel=RBF()):
         super().__init__()
+        self.pvalues = []
+        self.qvalues = []
         self.kernel = kernel
         self.weight = weight
 
@@ -41,4 +44,5 @@ class MMDLossConstrained(nn.Module):
         XX = K[:X_size, :X_size].mean()
         XY = K[:X_size, X_size:].mean()
         YY = K[X_size:, X_size:].mean()
-        return XX - 2 * XY + YY + self.weight*(torch.mean(torch.ones(U.shape[1]).to('cuda') - torch.topk(U, 1, 0).values))
+
+        return XX - 2 * XY + YY + self.weight*(torch.mean(torch.ones(U.shape[1]).to('mps') - torch.topk(U, 1, 0).values))

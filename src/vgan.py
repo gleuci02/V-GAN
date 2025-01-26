@@ -2,6 +2,7 @@ import torch
 from collections import defaultdict
 from .models.Generator import Generator_big
 from .models.Detector import Detector, Encoder, Decoder
+#from .modules.network_module import Encoder, Decoder
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained
@@ -44,6 +45,8 @@ class VGAN:
         self.device = torch.device('cuda:0' if torch.cuda.is_available(
         ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
         self.seed = 777
+        self.pvalues = []
+        self.qvalues = []
 
     def __normalize(x, dim=1):
         return x.div(x.norm(2, dim=dim).expand_as(x))
@@ -148,8 +151,7 @@ class VGAN:
         self.generator.load_state_dict(torch.load(
             path_to_generator, map_location=device))
         self.generator.eval()  # This only works for dropout layers
-        self.generator_optimizer = f'Loaded Model from {
-            path_to_generator} with {ndims} dimensions in the latent space'
+        self.generator_optimizer = f'Loaded Model from {path_to_generator} with {ndims} dimensions in the latent space'
         self.__latent_size = max(int(ndims/16), 1)
 
     def get_the_networks(self, ndims: int, latent_size: int, device: str = None) -> tuple:
@@ -199,8 +201,9 @@ class VGAN:
             detector.parameters(), lr=self.lr_D, weight_decay=self.weight_decay)
         self.generator_optimizer = gen_optimizer.__class__.__name__
         self.detector_optimizer = det_optimizer.__class__.__name__
-        # loss_function =  tts.MMDStatistic(self.batch_size, self.batch_size)
+        loss_function_stat =  tts.MMDStatistic(self.batch_size, self.batch_size)
         loss_function = MMDLossConstrained(weight=self.temperature)
+        loss_function_test = MMDLossConstrained(weight=self.temperature)
 
         # OPTIMIZATION STUFF
         one = torch.mps.Tensor([1])
@@ -220,6 +223,8 @@ class VGAN:
         iternum_g = 1
         detector_loss = np.nan
         generator_loss = np.nan
+
+        pvalues = []
         for epoch in range(self.epochs):
             print(f'\rEpoch {epoch} of {self.epochs}')
 
@@ -317,10 +322,55 @@ class VGAN:
                 if iternum_g > self.iternum_g:
                     iternum_d = 1
 
+            batch_loss_G = loss_function_test(batch_enc, projected_batch_enc, fake_subspaces)
+            batch_loss_D = loss_function_test(batch_dec, projected_batch_dec, fake_subspaces)
+
+            projected_batch = fake_subspaces*batch
+
+            mmd_G, distances = loss_function_stat(batch, projected_batch, [self.bandwidth], ret_matrix=True)
+
+            loss = MMDLoss()
+            lossloss = loss(batch_dec, projected_batch_dec)
+
+            #print(lossloss)
+            #print(loss.bandwith)
+            #print(mmd_G)
+            #print(batch_loss_G)
+            #print(batch_loss_D)
+            #print(loss_function_stat.pval(distances))
+            #print(loss_function_test.bandwidth)
+
             print(f"Average loss in the epoch Generator: {generator_loss}")
             print(f"Average loss in the epoch Detector: {detector_loss}")
             self.train_history["generator_loss"].append(generator_loss)
             self.train_history["detector_loss"].append(detector_loss)
+
+            #pvalues.append(loss_function_stat.pval(distances)) #mmd.pval(distances)
+        
+        batch_loss_G = loss_function_test(batch_enc, projected_batch_enc, fake_subspaces)
+
+        projected_batch = fake_subspaces*batch
+
+        mmd_G, distances = loss_function_stat(batch, projected_batch, [self.bandwidth], ret_matrix=True)
+
+        self.bandwidth = loss_function_test.bandwidth
+
+        self.pvalues = loss_function_test.pvalues
+        self.qvalues = loss_function_test.qvalues
+
+        #loss_function = MMDLoscontrained(...)
+
+        #distance_function = MMDLoscontrained(...)
+
+        #alphas = [self.bandwidth]
+        #mmd_loss, distances = loss_function_stat(batch, projected_batch, alphas, ret_matrix=True)
+
+        #print(loss_function_stat.pval(distances))
+
+        #pvalues.append(loss_function_stat.pval(distances))
+        #plt.plot(pvalues)
+        #plt.savefig("Kmeans_pvalues.png", dpi=300)
+        #plt.close()
 
         if not self.path_to_directory == None:
             path_to_directory = Path(self.path_to_directory)

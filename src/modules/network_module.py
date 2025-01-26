@@ -89,3 +89,58 @@ class LinearBlock(torch.nn.Module):
             x1 = torch.cat([x, x1], axis=1)
 
         return x1
+
+class Encoder(torch.nn.Module):
+    def __init__(self, latent_size, img_size):
+
+        super(Encoder, self).__init__()
+        assert img_size % 16 == 0, "isize has to be a multiple of 16"
+        
+        # input is nc x isize x isize
+        main = nn.Sequential()
+
+        main.add_module('Initial layer', nn.Linear(img_size, 64))
+        csize, cndf = img_size / 2, 64
+
+        while csize > 4:
+            in_feat = cndf
+            out_feat = cndf * 2
+            main.add_module('pyramid_{0}-{1}_linear'.format(in_feat, out_feat), nn.Linear(in_feat, out_feat))
+            cndf = cndf * 2
+            csize = csize / 2
+
+        main.add_module('final_{0}-{1}_conv'.format(in_feat, out_feat), nn.Linear(cndf, latent_size))
+        self.main = main
+
+    def forward(self, input):
+        output = self.main(input)
+        return output
+    
+
+class Decoder(torch.nn.Module):
+    def __init__(self, latent_size, img_size):
+
+        super(Decoder, self).__init__()
+        assert img_size % 16 == 0, "img_size has to be a multiple of 16"
+
+        cngf, tisize = 64 // 2, 4
+        while tisize != img_size:
+            cngf = cngf * 2
+            tisize = tisize * 2
+
+        main = nn.Sequential()
+        main.add_module('initial_{0}_linear'.format(cngf), nn.Linear(latent_size, cngf))
+
+        csize = 4
+        while csize < img_size // 2:
+            main.add_module('pyramid_{0}-{1}_linear'.format(cngf, cngf // 2), nn.Linear(cngf, cngf // 2))
+            cngf = cngf // 2
+            csize = csize * 2
+
+        main.add_module('final_{0}-{1}_convt'.format(cngf, 1), nn.Linear(cngf, 1))
+
+        self.main = main
+
+    def forward(self, input):
+        output = self.main(input)
+        return output
