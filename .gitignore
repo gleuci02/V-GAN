@@ -174,3 +174,9 @@ data/elki
 
 #Extra packages and repositories downloaded
 src/packages/
+
+# datasets
+*.csv
+#generated images
+*.png
+*.jpg

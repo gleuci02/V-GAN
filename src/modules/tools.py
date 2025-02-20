@@ -27,3 +27,24 @@ def numeric_to_boolean(num_array, n_features):
         res.append(bool_array)
 
     return res
+
+def reduce_subspaces(u, proba):
+
+    sorted_vectors = sorted(u.tolist(), key=lambda v: sum(v), reverse=True)
+
+    result = u.tolist()
+
+    for i, v in enumerate(u.tolist()):
+
+        for j, v2 in enumerate(sorted_vectors[i+1:]):
+
+            result_vector = [a or b for a, b in zip(v, v2)]
+            
+            if result_vector in sorted_vectors:
+            
+                    sorted_vectors.remove(v2)
+                    result.remove(v2)
+                    proba[i] += proba[j]
+                    proba = np.delete(proba, j)
+
+    return result, proba

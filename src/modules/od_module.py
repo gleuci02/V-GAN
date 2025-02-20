@@ -80,6 +80,7 @@ class VGAN(VGAN):
         results.append(mmd.pval(distances))
 
         bandwidth.append("recommended bandwidth")
+        return results, bandwidth
         return pd.DataFrame([results], columns=bandwidth, index=["p-val"])
 
 

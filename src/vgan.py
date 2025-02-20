@@ -201,9 +201,7 @@ class VGAN:
             detector.parameters(), lr=self.lr_D, weight_decay=self.weight_decay)
         self.generator_optimizer = gen_optimizer.__class__.__name__
         self.detector_optimizer = det_optimizer.__class__.__name__
-        loss_function_stat =  tts.MMDStatistic(self.batch_size, self.batch_size)
         loss_function = MMDLossConstrained(weight=self.temperature)
-        loss_function_test = MMDLossConstrained(weight=self.temperature)
 
         # OPTIMIZATION STUFF
         one = torch.mps.Tensor([1])
@@ -272,7 +270,7 @@ class VGAN:
 
                     # OPTIMIZATION STEP DETECTOR
                     det_optimizer.zero_grad()
-                    batch_loss_D = minusone.to('mps')*(loss_function(batch_enc, projected_batch_enc, fake_subspaces) - .1 *
+                    batch_loss_D = minusone.to('cuda')*(loss_function(batch_enc, projected_batch_enc, fake_subspaces) - .1 *
                                                        L2_distance_batch - .1*L2_distance_projected_batch)  # Constrained MMD Loss
                     self.bandwidth = loss_function.bandwidth
                     batch_loss_D.backward()
@@ -322,55 +320,10 @@ class VGAN:
                 if iternum_g > self.iternum_g:
                     iternum_d = 1
 
-            batch_loss_G = loss_function_test(batch_enc, projected_batch_enc, fake_subspaces)
-            batch_loss_D = loss_function_test(batch_dec, projected_batch_dec, fake_subspaces)
-
-            projected_batch = fake_subspaces*batch
-
-            mmd_G, distances = loss_function_stat(batch, projected_batch, [self.bandwidth], ret_matrix=True)
-
-            loss = MMDLoss()
-            lossloss = loss(batch_dec, projected_batch_dec)
-
-            #print(lossloss)
-            #print(loss.bandwith)
-            #print(mmd_G)
-            #print(batch_loss_G)
-            #print(batch_loss_D)
-            #print(loss_function_stat.pval(distances))
-            #print(loss_function_test.bandwidth)
-
             print(f"Average loss in the epoch Generator: {generator_loss}")
             print(f"Average loss in the epoch Detector: {detector_loss}")
             self.train_history["generator_loss"].append(generator_loss)
             self.train_history["detector_loss"].append(detector_loss)
-
-            #pvalues.append(loss_function_stat.pval(distances)) #mmd.pval(distances)
-        
-        batch_loss_G = loss_function_test(batch_enc, projected_batch_enc, fake_subspaces)
-
-        projected_batch = fake_subspaces*batch
-
-        mmd_G, distances = loss_function_stat(batch, projected_batch, [self.bandwidth], ret_matrix=True)
-
-        self.bandwidth = loss_function_test.bandwidth
-
-        self.pvalues = loss_function_test.pvalues
-        self.qvalues = loss_function_test.qvalues
-
-        #loss_function = MMDLoscontrained(...)
-
-        #distance_function = MMDLoscontrained(...)
-
-        #alphas = [self.bandwidth]
-        #mmd_loss, distances = loss_function_stat(batch, projected_batch, alphas, ret_matrix=True)
-
-        #print(loss_function_stat.pval(distances))
-
-        #pvalues.append(loss_function_stat.pval(distances))
-        #plt.plot(pvalues)
-        #plt.savefig("Kmeans_pvalues.png", dpi=300)
-        #plt.close()
 
         if not self.path_to_directory == None:
             path_to_directory = Path(self.path_to_directory)
