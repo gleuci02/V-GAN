@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import random
-
+from torch import nn, optim
 
 def aggregator_funct(decision_function: np.array, type: str = "avg", weights: np.ndarray = None) -> np.ndarray:
     assert type in ["avg", "exact"], f"{type} aggregation not found"
@@ -36,7 +36,7 @@ def reduce_subspaces(u, proba):
 
     for i, v in enumerate(u.tolist()):
 
-        for j, v2 in enumerate(sorted_vectors[i+1:]):
+        for j, v2 in enumerate(sorted_vectors[i:]):
 
             result_vector = [a or b for a, b in zip(v, v2)]
             
@@ -48,3 +48,24 @@ def reduce_subspaces(u, proba):
                     proba = np.delete(proba, j)
 
     return result, proba
+
+
+def pretrain_autoencoder(detector, dataloader, epochs=10, lr=0.001, device='cuda'):
+    detector.to(device)
+    optimizer = optim.Adam(detector.parameters(), lr=lr)
+    loss_fn = nn.MSELoss()
+
+    for epoch in range(epochs):
+        total_loss = 0
+        for batch in dataloader:
+            batch = batch.view(batch.size(0), -1).to(device)
+            optimizer.zero_grad()
+            _, batch_dec = detector(batch)
+            loss = loss_fn(batch_dec, batch)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss/len(dataloader):.6f}")
+
+    return detector

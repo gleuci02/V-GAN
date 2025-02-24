@@ -2,7 +2,7 @@ import torch
 from collections import defaultdict
 from .models.Generator import Generator_big
 from .models.Detector import Detector, Encoder, Decoder
-#from .modules.network_module import Encoder, Decoder
+#from .modules.network_module import Encoder, Decoder, Generator_big
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained
@@ -16,6 +16,7 @@ import os
 import operator
 import datetime
 from torch.autograd import Variable
+from .modules.tools import pretrain_autoencoder
 
 
 class VGAN:
@@ -192,8 +193,20 @@ class VGAN:
         device = self.device
         generator, detector = self.get_the_networks(
             ndims, latent_size, device=device)
+        
         generator.apply(self.__weights_init)
         detector.apply(self.__weights_init)
+        
+        # DATA LOADER#
+        if cuda:
+            data_loader = DataLoader(
+                X, batch_size=self.batch_size, drop_last=True, pin_memory=cuda, shuffle=True)
+        else:  # Uses CUDA if Available, other wise MPS or nothing
+            data_loader = DataLoader(
+                X, batch_size=self.batch_size, drop_last=True, pin_memory=mps, shuffle=True)
+        batch_number = data_loader.__len__()
+        
+        detector = pretrain_autoencoder(detector, data_loader, 30, 0.001, self.device)
 
         gen_optimizer = torch.optim.Adadelta(
             generator.parameters(), lr=self.lr_G, weight_decay=self.weight_decay)
@@ -206,15 +219,6 @@ class VGAN:
         # OPTIMIZATION STUFF
         one = torch.mps.Tensor([1])
         minusone = one * -1
-
-        # DATA LOADER#
-        if cuda:
-            data_loader = DataLoader(
-                X, batch_size=self.batch_size, drop_last=True, pin_memory=cuda, shuffle=True)
-        else:  # Uses CUDA if Available, other wise MPS or nothing
-            data_loader = DataLoader(
-                X, batch_size=self.batch_size, drop_last=True, pin_memory=mps, shuffle=True)
-        batch_number = data_loader.__len__()
 
         # BATCH LOOP#
         iternum_d = 1
@@ -256,6 +260,13 @@ class VGAN:
                     for p in detector.decoder.parameters():
                         p.requires_grad = True
                     batch_enc, batch_dec = detector(batch)
+                    #plt.imshow(batch_enc[0].cpu().detach().numpy(), cmap=plt.get_cmap('gray'))
+                    #pic_dec = torch.unflatten(batch_dec[0].cpu().detach(), 0, (28, 28))
+                    #plt.imshow(pic_dec, cmap=plt.get_cmap('gray'))
+                    #plt.savefig("decoded.png")
+                    #pic = torch.unflatten(batch[0].cpu().detach(), 0, (28, 28))
+                    #plt.imshow(pic, cmap=plt.get_cmap('gray'))
+                    #plt.savefig("normal.png")
                     with torch.no_grad():
                         noise_tensor = Variable(noise_tensor.normal_())
                         fake_subspaces = Variable(

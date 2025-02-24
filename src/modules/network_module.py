@@ -90,10 +90,10 @@ class LinearBlock(torch.nn.Module):
 
         return x1
 
-class Encoder(torch.nn.Module):
+class ttEncoder(torch.nn.Module):
     def __init__(self, latent_size, img_size):
 
-        super(Encoder, self).__init__()
+        super(ttEncoder, self).__init__()
         assert img_size % 16 == 0, "isize has to be a multiple of 16"
         
         # input is nc x isize x isize
@@ -117,10 +117,10 @@ class Encoder(torch.nn.Module):
         return output
     
 
-class Decoder(torch.nn.Module):
+class ttDecoder(torch.nn.Module):
     def __init__(self, latent_size, img_size):
 
-        super(Decoder, self).__init__()
+        super(ttDecoder, self).__init__()
         assert img_size % 16 == 0, "img_size has to be a multiple of 16"
 
         cngf, tisize = 64 // 2, 4
@@ -144,3 +144,54 @@ class Decoder(torch.nn.Module):
     def forward(self, input):
         output = self.main(input)
         return output
+    
+class Encoder(nn.Module):
+    def __init__(self, latent_size):
+        super(Encoder, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, stride=2, padding=1),  # 28x28 -> 14x14
+            nn.ReLU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # 14x14 -> 7x7
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 7x7 -> 4x4
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(64 * 4 * 4, latent_size)
+        )
+
+    def forward(self, x):
+        return self.encoder(x)
+
+class Decoder(nn.Module):
+    def __init__(self, latent_size):
+        super(Decoder, self).__init__()
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_size, 64 * 4 * 4),
+            nn.ReLU(),
+            nn.Unflatten(1, (64, 4, 4)),
+            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),  # 4x4 -> 7x7
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, 16, kernel_size=3, stride=2, padding=1, output_padding=1),  # 7x7 -> 14x14
+            nn.ReLU(),
+            nn.ConvTranspose2d(16, 1, kernel_size=3, stride=2, padding=1, output_padding=1),  # 14x14 -> 28x28
+            nn.Sigmoid()  # Ensure pixel values stay between 0 and 1
+        )
+
+    def forward(self, x):
+        return self.decoder(x)
+
+class Generator_big(nn.Module):
+    def __init__(self, latent_size):
+        super(Generator_big, self).__init__()
+        self.main = nn.Sequential(
+            nn.Linear(latent_size, 7*7*128),  # Expand to 7x7 feature maps
+            nn.ReLU(),
+            nn.Unflatten(1, (128, 7, 7)),  # Reshape to (128, 7, 7)
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),  # 7x7 -> 14x14
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1),  # 14x14 -> 28x28
+            upper_softmax()  # Normalize output between -1 and 1
+        )
+
+    def forward(self, x):
+        return self.main(x)

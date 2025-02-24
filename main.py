@@ -17,6 +17,7 @@ import datetime
 import time
 from sklearn.ensemble import BaggingClassifier
 
+
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
     #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
@@ -25,11 +26,11 @@ ALGORITHMS = {
 }
 
 DATASETS = {
-    #"CIFAR100": load_cifar100,
-    #"MNIST": load_mnist,
+    #"STL10": load_stl10,
+    "CIFAR100": load_cifar100,
+    "MNIST": load_mnist,
     #"FASHION_MNIST": load_fashion_mnist,
-    #"CIFAR10": load_cifar10,
-    "STL10": load_stl10
+    #"CIFAR10": load_cifar10
 }
 
 def generate_clustering_ensemble(clusterings, amount_cluster):
@@ -153,10 +154,10 @@ def run_experiment(batch_size, lr_G, lr_Ds, epoch):
                 dataset_train, dataset_test = DATASETS[dataset]()
 
                 dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=False)
-                dataloader_test = DataLoader(dataset_test, batch_size=int(batch_size / 10), shuffle=False)
+                #dataloader_test = DataLoader(dataset_test, batch_size=int(batch_size / 10), shuffle=False)
 
                 X_train, y_train = next(iter(dataloader_train))
-                X_test, y_test = next(iter(dataloader_test))
+                #X_test, y_test = next(iter(dataloader_test))
 
                 #------Preprosessing with VGAN-----#
                 subspaces = vgan_training(vgan, X_train)
@@ -249,7 +250,7 @@ def run_experiment(batch_size, lr_G, lr_Ds, epoch):
         })
 
         #df.to_csv(f'FB_Ensemble_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
-        df.to_csv(f'Without_reducing{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
+        df.to_csv(f'pretrainAE_????{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
         #final_cluster = generate_clustering_ensemble(clusterings, amount_cluster)
 

@@ -45,8 +45,11 @@ class Generator_big(nn.Module):
         super(Generator_big, self).__init__()
         self.main = nn.Sequential(
             nn.Linear(latent_size, 2*latent_size),
+            nn.ReLU(),
             nn.Linear(2*latent_size, 4*latent_size),
+            nn.ReLU(),
             nn.Linear(4*latent_size, 8*latent_size),
+            nn.ReLU(),
             nn.Linear(8*latent_size, img_size),
             upper_softmax()
         )
