@@ -28,24 +28,48 @@ def numeric_to_boolean(num_array, n_features):
 
     return res
 
+#def reduce_subspaces(u, proba):
+#
+#    sorted_vectors = sorted(u.tolist(), key=lambda v: sum(v), reverse=True)
+#
+#    result = u.tolist()
+#
+#    for i, v in enumerate(u.tolist()):
+#
+#        for j, v2 in enumerate(sorted_vectors[i:]):
+#
+#            result_vector = [a or b for a, b in zip(v, v2)]
+#
+#            if result_vector in sorted_vectors:
+ #                   
+  #                  sorted_vectors.remove(v2)
+   #                 result.remove(v2)
+    #                proba[i] += proba[j]
+     #               proba = np.delete(proba, j)
+
+    #return result, proba
+
 def reduce_subspaces(u, proba):
-
     sorted_vectors = sorted(u.tolist(), key=lambda v: sum(v), reverse=True)
-
     result = u.tolist()
+    indices_to_remove = set()
 
-    for i, v in enumerate(u.tolist()):
+    for i, v in enumerate(result):
+        for j in range(i, len(sorted_vectors)):  # Iterate over indices instead
+            if j in indices_to_remove:
+                continue  # Skip already removed indices
 
-        for j, v2 in enumerate(sorted_vectors[i:]):
-
+            v2 = sorted_vectors[j]
             result_vector = [a or b for a, b in zip(v, v2)]
-            
+
             if result_vector in sorted_vectors:
-            
-                    sorted_vectors.remove(v2)
-                    result.remove(v2)
-                    proba[i] += proba[j]
-                    proba = np.delete(proba, j)
+                indices_to_remove.add(j)
+                proba[i] += proba[j]  # Accumulate probability
+
+    # Remove elements after iteration
+    sorted_vectors = [vec for idx, vec in enumerate(sorted_vectors) if idx not in indices_to_remove]
+    result = [vec for idx, vec in enumerate(result) if idx not in indices_to_remove]
+    proba = np.delete(proba, list(indices_to_remove))
 
     return result, proba
 
@@ -58,14 +82,14 @@ def pretrain_autoencoder(detector, dataloader, epochs=10, lr=0.001, device='cuda
     for epoch in range(epochs):
         total_loss = 0
         for batch in dataloader:
-            batch = batch.view(batch.size(0), -1).to(device)
+            batch = batch.view(batch.size(0), -1).to(device)  # Flatten images
             optimizer.zero_grad()
-            _, batch_dec = detector(batch)
-            loss = loss_fn(batch_dec, batch)
+            _, batch_dec = detector(batch)  # Forward pass
+            loss = loss_fn(batch_dec, batch)  # Reconstruction loss
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
         
         print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss/len(dataloader):.6f}")
 
-    return detector
+    return detector  # Return pretrained detector

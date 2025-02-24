@@ -20,17 +20,17 @@ from sklearn.ensemble import BaggingClassifier
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    #"Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
+    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
 }
 
 DATASETS = {
-    #"STL10": load_stl10,
-    #"CIFAR100": load_cifar100,
+    "STL10": load_stl10,
+    "CIFAR100": load_cifar100,
     "MNIST": load_mnist,
-    #"FASHION_MNIST": load_fashion_mnist,
-    #"CIFAR10": load_cifar10
+    "FASHION_MNIST": load_fashion_mnist,
+    "CIFAR10": load_cifar10
 }
 
 def generate_clustering_ensemble(clusterings, amount_cluster):
