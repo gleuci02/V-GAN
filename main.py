@@ -3,7 +3,7 @@ from datasets.cifar import load_cifar10, load_cifar100
 from datasets.stl import load_stl10
 #from algorithms.EDSC import edesc
 from sklearn import cluster
-from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
+#from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
 from metrics import normalized_mutual_info_score, clustering_accuracy
 import pandas as pd
 from src.modules.tools import reduce_subspaces
@@ -19,17 +19,17 @@ from sklearn.ensemble import BaggingClassifier
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
+    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    #"Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
 }
 
 DATASETS = {
-    "STL10": load_stl10,
-    "CIFAR100": load_cifar100,
-    "MNIST": load_mnist,
+    #"STL10": load_stl10,
+    #"CIFAR100": load_cifar100,
+    #"MNIST": load_mnist,
     "FASHION_MNIST": load_fashion_mnist,
-    "CIFAR10": load_cifar10
+    #"CIFAR10": load_cifar10
 }
 
 def plot_subspaces(images, U, dataset, shape):
@@ -38,7 +38,7 @@ def plot_subspaces(images, U, dataset, shape):
     num_images = 20
 
     for i in range(num_images):
-        images[i] = images[i] * U
+        images[i] = images[i] * U[i]
 
     # Define grid size
     rows, cols = 4, 5  # 4 rows, 5 columns
@@ -54,7 +54,7 @@ def plot_subspaces(images, U, dataset, shape):
         ax.axis("off")
 
     plt.tight_layout()
-    plt.savefig(f"{dataset}.png")
+    plt.savefig(f"FASHION_MNIST_NOCHANGE.png")
 
 def generate_clustering_ensemble(clusterings, amount_cluster):
     n_samples = clusterings.shape[1]
@@ -177,19 +177,16 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 dataset_train, dataset_test = DATASETS[dataset]()
 
                 dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
-                dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
+                #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
 
                 X_train, y_train = next(iter(dataloader_train))
-                X_test, y_test = next(iter(dataloader_test))
+                #X_test, y_test = next(iter(dataloader_test))
 
                 #------Preprosessing with VGAN-----#
                 subspaces = vgan_training(vgan, X_train)
 
-                # Define feature bagging (random feature subsets)
-                ##np.random.seed(vgan.seed)
-                ##n_features = X_train.shape[1]
-                ##n_models = 30  # Number of Subspaces
-                ##subspaces = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
+                plot_subspaces(X_train, subspaces, dataset, (1, 28, 28))
+                exit()
                 #------End of Preprosessing with VGAN-----#
 
                 for name in ALGORITHMS:
