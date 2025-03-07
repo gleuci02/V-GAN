@@ -144,54 +144,86 @@ class ttDecoder(torch.nn.Module):
     def forward(self, input):
         output = self.main(input)
         return output
-    
+
+
 class Encoder(nn.Module):
-    def __init__(self, latent_size):
+    def __init__(self, latent_size, img_size, channel):
         super(Encoder, self).__init__()
         self.encoder = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, stride=2, padding=1),  # 28x28 -> 14x14
+            nn.Conv2d(channel, img_size, 3, stride=2, padding=1),  # 32x32 -> 16x16   nn.Conv2d(3, 32, 3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # 14x14 -> 7x7
+            nn.BatchNorm2d(img_size),
+            nn.Conv2d(img_size, 2*img_size, 3, stride=2, padding=1),  # 16x16 -> 8x8    nn.Conv2d(32, 64, 3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 7x7 -> 4x4
+            nn.BatchNorm2d(2*img_size),
+            nn.Conv2d(2*img_size, 4*img_size, 3, stride=2, padding=1),  # 8x8 -> 4x4   nn.Conv2d(64, 128, 3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(64 * 4 * 4, latent_size)
+            nn.BatchNorm2d(4*img_size)
         )
+        self.fc_mu = nn.Linear(int((img_size / 16)*img_size * img_size), latent_size)  # Latent vector
 
     def forward(self, x):
-        return self.encoder(x)
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)  # Flatten before FC
+        z = self.fc_mu(x)  # Latent space output
+        return z
 
 class Decoder(nn.Module):
-    def __init__(self, latent_size):
+    def __init__(self, latent_size, img_size, channel):
         super(Decoder, self).__init__()
+        self.img_size = img_size
+        self.fc = nn.Linear(latent_size, int((img_size/16)*img_size * img_size))  # Expand to feature map
         self.decoder = nn.Sequential(
-            nn.Linear(latent_size, 64 * 4 * 4),
+            nn.ConvTranspose2d(4*img_size, 2*img_size, 3, stride=2, padding=1, output_padding=1),  # 4x4 -> 8x8 nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1),
             nn.ReLU(),
-            nn.Unflatten(1, (64, 4, 4)),
-            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),  # 4x4 -> 7x7
+            nn.BatchNorm2d(2*img_size),
+            nn.ConvTranspose2d(2*img_size, img_size, 3, stride=2, padding=1, output_padding=1),  # 8x8 -> 16x16 nn.ConvTranspose2d(64, 32, 3, stride=2, padding=1, output_padding=1)
             nn.ReLU(),
-            nn.ConvTranspose2d(32, 16, kernel_size=3, stride=2, padding=1, output_padding=1),  # 7x7 -> 14x14
-            nn.ReLU(),
-            nn.ConvTranspose2d(16, 1, kernel_size=3, stride=2, padding=1, output_padding=1),  # 14x14 -> 28x28
-            nn.Sigmoid()  # Ensure pixel values stay between 0 and 1
+            nn.BatchNorm2d(img_size),
+            nn.ConvTranspose2d(img_size, channel, 3, stride=2, padding=1, output_padding=1),  # 16x16 -> 32x32 nn.ConvTranspose2d(32, 1, 3, stride=2, padding=1, output_padding=1)
+            nn.Sigmoid()  # CIFAR-10 pixel values are between 0-1
         )
 
     def forward(self, x):
-        return self.decoder(x)
+        x = self.fc(x)
+        x = x.view(x.size(0), 4*self.img_size, int(self.img_size / 8), int(self.img_size / 8))  # Reshape to feature map
+        x = self.decoder(x)
+        return x
+
+    
+    
+class Detector(nn.Module): #Using an ELM as the embedding worked for LUNAR and Deep IForest
+    def __init__(self, latent_size, img_size, channel, encoder, decoder):
+        super(Detector, self).__init__()
+        self.encoder = encoder(latent_size, img_size, channel)
+        self.decoder = decoder(latent_size, img_size, channel)
+
+    def forward(self, input):
+        enc_X = self.encoder(input)
+        dec_X = self.decoder(enc_X)
+
+        #enc_X = enc_X.view(input.size(0), -1)
+        dec_X = dec_X.view(input.size(0), -1)
+        return enc_X, dec_X
+
 
 class Generator_big(nn.Module):
-    def __init__(self, latent_size):
+    def __init__(self, latent_size, img_size):
         super(Generator_big, self).__init__()
         self.main = nn.Sequential(
-            nn.Linear(latent_size, 7*7*128),  # Expand to 7x7 feature maps
+            nn.Linear(latent_size, 256 * 4 * 4),  # Expand latent space
             nn.ReLU(),
-            nn.Unflatten(1, (128, 7, 7)),  # Reshape to (128, 7, 7)
-            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),  # 7x7 -> 14x14
+            nn.Unflatten(1, (256, 4, 4)),  # Reshape to (256, 4, 4)
+            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),  # 4x4 -> 8x8
             nn.ReLU(),
-            nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1),  # 14x14 -> 28x28
-            upper_softmax()  # Normalize output between -1 and 1
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),  # 8x8 -> 16x16
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 3, kernel_size=4, stride=2, padding=1),  # 16x16 -> 32x32
+            upper_softmax(),
         )
 
     def forward(self, x):
-        return self.main(x)
+        res = self.main(x)
+        res = res.view(input.size(0), -1)
+        return res
+

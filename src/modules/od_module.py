@@ -2,7 +2,8 @@ from sel_suod.models.base import sel_SUOD
 import numpy as np
 from src.vgan import VGAN
 from src.vmmd import VMMD
-from ..models.Detector import Detector, Encoder, Decoder
+#from ..models.Detector import Detector, Encoder, Decoder
+from ..modules.network_module import Detector, Encoder, Decoder#, Generator_big
 from ..models.Generator import Generator_big, Generator
 import torch_two_sample as tts
 from sklearn.preprocessing import normalize
@@ -15,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 class VGAN(VGAN):
-    def get_the_networks(self, ndims, latent_size, device=None):
+    def get_the_networks(self, ndims, latent_size, channel, device=None):
         if device == None:
             device = self.device
         generator = Generator_big(
             img_size=ndims, latent_size=latent_size).to(device)
-        detector = Detector(latent_size, ndims, Encoder, Decoder).to(device)
+        detector = Detector(latent_size, ndims, channel, Encoder, Decoder).to(device)
         return generator, detector
 
     def approx_subspace_dist(self, subspace_count=500, add_leftover_features=False):
@@ -53,10 +54,20 @@ class VGAN(VGAN):
         x_data = normalize(x_data, axis=0)
         x_sample = torch.Tensor(pd.DataFrame(
             x_data).sample(count).to_numpy()).to(self.device)
+        
+        x_sample = torch.unflatten(x_sample, 1, self.shape)
+        x_sample = self.detector.encoder(x_sample)
+        x_sample = torch.flatten(x_sample, 1, -1)
+
         u_subspaces = self.generate_subspaces(count)
         ux_sample = u_subspaces * \
             torch.Tensor(x_sample).to(self.device) + \
             torch.mean(x_sample, dim=0)*(~u_subspaces)
+        
+        ux_sample = torch.unflatten(ux_sample, 1, self.shape)
+        ux_sample = self.detector.encoder(ux_sample)
+        ux_sample = torch.flatten(ux_sample, 1, -1)
+
         if type(bandwidth) == float:
             bandwidth = [bandwidth]
 

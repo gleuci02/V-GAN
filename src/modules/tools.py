@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import random
+import torch
 from torch import nn, optim
 
 def aggregator_funct(decision_function: np.array, type: str = "avg", weights: np.ndarray = None) -> np.ndarray:
@@ -82,9 +83,11 @@ def pretrain_autoencoder(detector, dataloader, epochs=10, lr=0.001, device='cuda
     for epoch in range(epochs):
         total_loss = 0
         for batch in dataloader:
-            batch = batch.view(batch.size(0), -1).to(device)  # Flatten images
+            batch = batch[0].to(device)
             optimizer.zero_grad()
             _, batch_dec = detector(batch)  # Forward pass
+            shape = batch.shape
+            batch_dec = torch.unflatten(batch_dec, 1, (shape[1], shape[2], shape[3]))      #(3, 32, 32))
             loss = loss_fn(batch_dec, batch)  # Reconstruction loss
             loss.backward()
             optimizer.step()

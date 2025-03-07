@@ -1,8 +1,8 @@
 import torch
 from collections import defaultdict
 from .models.Generator import Generator_big
-from .models.Detector import Detector, Encoder, Decoder
-#from .modules.network_module import Encoder, Decoder, Generator_big
+#from .models.Detector import Detector#, Encoder, Decoder
+from .modules.network_module import Detector, Encoder, Decoder#, Generator_big
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained
@@ -46,8 +46,8 @@ class VGAN:
         self.device = torch.device('cuda:0' if torch.cuda.is_available(
         ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
         self.seed = 777
-        self.pvalues = []
-        self.qvalues = []
+        self.dataset = ""
+        self.shape = (1, 32, 32)
 
     def __normalize(x, dim=1):
         return x.div(x.norm(2, dim=dim).expand_as(x))
@@ -155,7 +155,7 @@ class VGAN:
         self.generator_optimizer = f'Loaded Model from {path_to_generator} with {ndims} dimensions in the latent space'
         self.__latent_size = max(int(ndims/16), 1)
 
-    def get_the_networks(self, ndims: int, latent_size: int, device: str = None) -> tuple:
+    def get_the_networks(self, ndims: int, latent_size: int, channel: int, device: str = None) -> tuple:
         """Object function to obtain the networks' architecture
 
         Args:
@@ -170,7 +170,7 @@ class VGAN:
             device = self.device
         generator = Generator_big(
             img_size=ndims, latent_size=latent_size).to(device)
-        detector = Detector(latent_size, ndims, Encoder, Decoder).to(device)
+        detector = Detector(latent_size, ndims, channel, Encoder, Decoder).to(device)
         return generator, detector
 
     def fit(self, X):
@@ -185,17 +185,28 @@ class VGAN:
             torch.mps.manual_seed(self.seed)
 
         # MODEL INTIALIZATION#
-        self.__latent_size = latent_size = max(int(X.shape[1]/16), 1)
-        ndims = X.shape[1]
+        self.shape = shape = X[0].shape
+        X = torch.flatten(X, 1, -1)
+        self.__latent_size = latent_size = X.shape[1]#max(int(X.shape[1]/16), 1)
+        ndims = shape[1]#X.shape[1]
+        channel = shape[0]
         train_size = X.shape[0]
         self.batch_size = min(self.batch_size, train_size)
 
         device = self.device
         generator, detector = self.get_the_networks(
-            ndims, latent_size, device=device)
+            ndims, latent_size, channel, device=device)
+        
+        # Load the saved weights
+        detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
+        detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
+
+        # Set the models to evaluation mode (important for inference)
+        detector.encoder.eval()
+        detector.decoder.eval()
         
         generator.apply(self.__weights_init)
-        detector.apply(self.__weights_init)
+        #detector.apply(self.__weights_init)
         
         # DATA LOADER#
         if cuda:
@@ -206,8 +217,6 @@ class VGAN:
                 X, batch_size=self.batch_size, drop_last=True, pin_memory=mps, shuffle=True)
         batch_number = data_loader.__len__()
         
-        detector = pretrain_autoencoder(detector, data_loader, 30, 0.001, self.device)
-
         gen_optimizer = torch.optim.Adadelta(
             generator.parameters(), lr=self.lr_G, weight_decay=self.weight_decay)
         det_optimizer = torch.optim.Adadelta(
@@ -240,6 +249,7 @@ class VGAN:
             else:
                 noise_tensor = torch.Tensor(self.batch_size, latent_size)
 
+                
             # ELM
             if self.__elm == True:
                 for p in detector.encoder.parameters():
@@ -247,33 +257,34 @@ class VGAN:
             if iternum_d <= self.iternum_d:
                 detector_loss = 0
                 for batch in tqdm(data_loader, leave=False):
-                    # Make sure there is only 1 observation per row.
-                    batch = batch.view(self.batch_size, -1)
+                   
                     if cuda:
                         batch = batch.cuda()
                     elif mps:
                         batch = batch.to(torch.float32).to(
                             # float64 not suported with mps
                             torch.device('mps'))
+                        
+                    # Make sure there is only 1 observation per row.
+                    batch = torch.unflatten(batch, 1, shape)
+                    batch_enc, batch_dec = detector(batch)
+                    batch = batch.view(self.batch_size, -1)
 
                     # GET SUBSPACES AND ENCODING-DECODING
                     for p in detector.decoder.parameters():
                         p.requires_grad = True
-                    batch_enc, batch_dec = detector(batch)
-                    #plt.imshow(batch_enc[0].cpu().detach().numpy(), cmap=plt.get_cmap('gray'))
-                    #pic_dec = torch.unflatten(batch_dec[0].cpu().detach(), 0, (28, 28))
-                    #plt.imshow(pic_dec, cmap=plt.get_cmap('gray'))
-                    #plt.savefig("decoded.png")
-                    #pic = torch.unflatten(batch[0].cpu().detach(), 0, (28, 28))
-                    #plt.imshow(pic, cmap=plt.get_cmap('gray'))
-                    #plt.savefig("normal.png")
+
                     with torch.no_grad():
                         noise_tensor = Variable(noise_tensor.normal_())
+                        
                         fake_subspaces = Variable(
                             # Freeze G
                             generator(noise_tensor).clone().detach())
-                    projected_batch_enc, projected_batch_dec = detector(
-                        fake_subspaces*batch + torch.less(batch, 1/batch.shape[1])*torch.mean(batch, dim=0))
+                        #torch.flatten(fake_subspaces, 1, -1)
+                    
+                    proj = fake_subspaces*batch + torch.less(batch, 1/batch.shape[1])*torch.mean(batch, dim=0)
+                    proj = torch.unflatten(proj, 1, shape)
+                    projected_batch_enc, projected_batch_dec = detector(proj)
                     L2_distance_batch = self.__distance(
                         batch.view(self.batch_size, -1), batch_dec, 'L2')
                     L2_distance_projected_batch = self.__distance((fake_subspaces*batch + torch.less(
@@ -294,22 +305,29 @@ class VGAN:
             elif iternum_g <= self.iternum_g:
                 generator_loss = 0
                 for batch in tqdm(data_loader, leave=False):
-                    # Make sure there is only 1 observation per row.
-                    batch = batch.view(self.batch_size, -1)
+                    
                     if cuda:
                         batch = batch.cuda()
                     elif mps:
                         batch = batch.to(torch.float32).to(
                             # float64 not suported with mps
                             torch.device('mps'))
-                    # GET SUBSPACES AND ENCODING-DECODING
+                        
+                    # Make sure there is only 1 observation per row.
+                    batch = torch.unflatten(batch, 1, shape)
                     batch_enc, batch_dec = detector(batch)
+
+                    batch = batch.view(self.batch_size, -1)
+
+                    # GET SUBSPACES AND ENCODING-DECODING
                     noise_tensor = Variable(noise_tensor.normal_())
+
                     fake_subspaces = Variable(
                         generator(noise_tensor))  # Unfreeze G
                     fake_subspaces.requires_grad = True
-                    projected_batch_enc, projected_batch_dec = detector(
-                        fake_subspaces*batch + torch.less(batch, 1/batch.shape[1])*torch.mean(batch, dim=0))
+                    proj = fake_subspaces*batch + torch.less(batch, 1/batch.shape[1])*torch.mean(batch, dim=0)
+                    proj = torch.unflatten(proj, 1, shape)
+                    projected_batch_enc, projected_batch_dec = detector(proj)
                     L2_distance_batch = self.__distance(
                         batch.view(self.batch_size, -1), batch_dec, 'L2')
                     L2_distance_projected_batch = self.__distance((fake_subspaces*batch + torch.less(

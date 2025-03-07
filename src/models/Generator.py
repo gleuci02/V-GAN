@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import Softmax
 
 
 # Regular function definition does not appear to work properly within a Sequential definition of a network in Pytorchs
@@ -43,16 +44,23 @@ class Generator(nn.Module):
 class Generator_big(nn.Module):
     def __init__(self, latent_size, img_size):
         super(Generator_big, self).__init__()
+
         self.main = nn.Sequential(
-            nn.Linear(latent_size, 2*latent_size),
-            nn.ReLU(),
-            nn.Linear(2*latent_size, 4*latent_size),
-            nn.ReLU(),
+            nn.Linear(latent_size, 4*latent_size),
+            nn.BatchNorm1d(4*latent_size),
+            nn.LeakyReLU(),
             nn.Linear(4*latent_size, 8*latent_size),
-            nn.ReLU(),
-            nn.Linear(8*latent_size, img_size),
-            upper_softmax()
+            nn.BatchNorm1d(8*latent_size),
+            nn.LeakyReLU(),
+            nn.Linear(8*latent_size, 4*latent_size),
+            nn.BatchNorm1d(4*latent_size),
+            nn.LeakyReLU(),
+            nn.Linear(4*latent_size, latent_size),
+            nn.BatchNorm1d(latent_size),
+            nn.LeakyReLU(),
+            upper_softmax(),
+            Softmax()
         )
 
-    def forward(self, input):
-        return self.main(input)
+    def forward(self, z):
+        return self.main(z)
