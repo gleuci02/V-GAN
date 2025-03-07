@@ -32,6 +32,30 @@ DATASETS = {
     "CIFAR10": load_cifar10
 }
 
+def plot_subspaces(images, U, dataset, shape):
+
+    # Select 20 sample images
+    num_images = 20
+
+    for i in range(num_images):
+        images[i] = images[i] * U
+
+    # Define grid size
+    rows, cols = 4, 5  # 4 rows, 5 columns
+    # Create subplots
+    fig, axes = plt.subplots(rows, cols, figsize=(10, 8))
+    images = torch.unflatten(images, 1, shape)
+    images = images.permute(0, 2, 3, 1)
+    # Plot images in the grid
+    print(images.shape)
+    for i, ax in enumerate(axes.flat):
+        print(images[i].shape)
+        ax.imshow(images[i], cmap="gray")
+        ax.axis("off")
+
+    plt.tight_layout()
+    plt.savefig(f"{dataset}.png")
+
 def generate_clustering_ensemble(clusterings, amount_cluster):
     n_samples = clusterings.shape[1]
     co_matrix = np.zeros((n_samples, n_samples))
