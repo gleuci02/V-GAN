@@ -3,7 +3,7 @@ from datasets.cifar import load_cifar10, load_cifar100
 from datasets.stl import load_stl10
 #from algorithms.EDSC import edesc
 from sklearn import cluster
-#from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
+from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
 from metrics import normalized_mutual_info_score, clustering_accuracy
 import pandas as pd
 from src.modules.tools import reduce_subspaces
@@ -17,19 +17,21 @@ import datetime
 import time
 from sklearn.ensemble import BaggingClassifier
 
+path = "results_VGAN/"
+
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    #"Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
+    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
 }
 
 DATASETS = {
-    #"STL10": load_stl10,
-    #"CIFAR100": load_cifar100,
-    #"MNIST": load_mnist,
+    "STL10": load_stl10,
+    "CIFAR100": load_cifar100,
+    "MNIST": load_mnist,
     "FASHION_MNIST": load_fashion_mnist,
-    #"CIFAR10": load_cifar10
+    "CIFAR10": load_cifar10
 }
 
 def plot_subspaces(images, U, dataset, shape):
@@ -54,7 +56,7 @@ def plot_subspaces(images, U, dataset, shape):
         ax.axis("off")
 
     plt.tight_layout()
-    plt.savefig(f"FASHION_MNIST_NOCHANGE.png")
+    plt.savefig(f"{path}{dataset}.png")
 
 def generate_clustering_ensemble(clusterings, amount_cluster):
     n_samples = clusterings.shape[1]
@@ -180,13 +182,14 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
 
                 X_train, y_train = next(iter(dataloader_train))
+                shape = X_train.shape
+                X_train = torch.flatten(X_train, 1, -1)
                 #X_test, y_test = next(iter(dataloader_test))
 
                 #------Preprosessing with VGAN-----#
                 subspaces = vgan_training(vgan, X_train)
 
-                plot_subspaces(X_train, subspaces, dataset, (1, 28, 28))
-                exit()
+                plot_subspaces(X_train, subspaces, dataset, (shape[1], shape[2], shape[3]))
                 #------End of Preprosessing with VGAN-----#
 
                 for name in ALGORITHMS:
@@ -245,32 +248,27 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
                     plt.close()
                     plt.figure(figsize=(20, 6))
-                    plt.plot(range(0, len(accuracys)), accuracys)
-                    plt.savefig(f'FB_{name}_{dataset}_ACC_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
-                    
-                    plt.close()
-                    plt.figure(figsize=(20, 6))
                     plt.plot(vgan.train_history["generator_loss"])
-                    plt.savefig(f'FB_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
+                    plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
 
                     plt.close()
                     plt.plot(vgan.train_history["detector_loss"])
                     plt.figure(figsize=(20, 1))
-                    plt.savefig(f'FB_DLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
+                    plt.savefig(f'{path}VGAN_DLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
                     plt.close()
 
         df = pd.DataFrame({
             "DATABASE": datasets_ensemble,
             "ALGORITHM": names_ensemble,
             "TIME TAKEN": total_times_ensemble,
-            "NMI": acc_ensemble,
-            "ACC": nmi_ensemble,
+            "NMI": nmi_ensemble,
+            "ACC": acc_ensemble,
             "PValue": results,
             "bandwidth": bandwiths
         })
 
         #df.to_csv(f'FB_Ensemble_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
-        df.to_csv(f'Without_reducing{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
+        df.to_csv(f'{path}VGAN_{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
         #final_cluster = generate_clustering_ensemble(clusterings, amount_cluster)
 
@@ -285,7 +283,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
             "ACC": accuracys
         })
 
-        df.to_csv(f'Without_reducing_ALLACC_epoch{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
+        df.to_csv(f'{path}VGAN_ALLACC_epoch{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
 if __name__ == "__main__":
 

@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler
 def load_cifar10():
     transform = transforms.Compose([
         transforms.ToTensor(),  # Convert to PyTorch tensor with shape [1, 28, 28]
-        transforms.Lambda(lambda x: x.view(-1))  # Flatten to shape [784]
+        #transforms.Lambda(lambda x: x.view(-1))  # Flatten to shape [784]
     ])
     cifar10_train = datasets.CIFAR10('./data/cifar', train=True, download=True, transform=transform)
     cifar10_test = datasets.CIFAR10('./data/cifar', train=False, download=True, transform=transform)
@@ -17,7 +17,7 @@ def load_cifar10():
 def load_cifar100():
     transform = transforms.Compose([
         transforms.ToTensor(),  # Convert to PyTorch tensor with shape [1, 28, 28]
-        transforms.Lambda(lambda x: x.view(-1))  # Flatten to shape [784]
+        #transforms.Lambda(lambda x: x.view(-1))  # Flatten to shape [784]
     ])
     cifar100_train = datasets.CIFAR100('./data/cifar', train=True, download=True, transform=transform)
     cifar100_test = datasets.CIFAR100('./data/cifar', train=False, download=True, transform=transform)
