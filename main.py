@@ -29,10 +29,10 @@ ALGORITHMS = {
 
 DATASETS = {
     #"STL10": load_stl10,
-    "CIFAR100": load_cifar100,
-    "MNIST": load_mnist,
+    #"CIFAR100": load_cifar100,
+    #"MNIST": load_mnist,
     "FASHION_MNIST": load_fashion_mnist,
-    "CIFAR10": load_cifar10
+    #"CIFAR10": load_cifar10
 }
 
 def visualize_reconstruction(autoencoder, data_loader, device='cuda'):
@@ -59,11 +59,12 @@ def visualize_reconstruction(autoencoder, data_loader, device='cuda'):
 
 def plot_subspaces(images, U, dataset, shape):
 
+    images = torch.flatten(images, 1, -1)
     # Select 20 sample images
     num_images = 20
 
     for i in range(num_images):
-        images[i] = images[i] * U
+        images[i] = images[i] * U[i]
 
     # Define grid size
     rows, cols = 4, 5  # 4 rows, 5 columns
@@ -225,6 +226,9 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #------Preprosessing with VGAN-----#
                 subspaces = vgan_training(vgan, X_train)
 
+                plot_subspaces(X_train, subspaces, dataset, shape[1:])
+                exit()
+
                 #------End of Preprosessing with VGAN-----#
 
                 for name in ALGORITHMS:
@@ -282,7 +286,6 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     acc_ensemble.append(acc)
                     nmi_ensemble.append(nmi)
 
-                    plot_subspaces(X_train, subspaces[0], dataset, shape[1:])
 
                     plt.close()
                     plt.figure(figsize=(20, 6))
