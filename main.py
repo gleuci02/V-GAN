@@ -40,7 +40,10 @@ def plot_subspaces(images, U, dataset, shape):
     num_images = 20
 
     for i in range(num_images):
-        images[i] = images[i] * U[i]
+        if i < len(U):
+            images[i] = images[i] * U[i]
+        else:
+            images[i] = images[i] * U[0]
 
     # Define grid size
     rows, cols = 4, 5  # 4 rows, 5 columns
@@ -49,9 +52,7 @@ def plot_subspaces(images, U, dataset, shape):
     images = torch.unflatten(images, 1, shape)
     images = images.permute(0, 2, 3, 1)
     # Plot images in the grid
-    print(images.shape)
     for i, ax in enumerate(axes.flat):
-        print(images[i].shape)
         ax.imshow(images[i], cmap="gray")
         ax.axis("off")
 
@@ -246,16 +247,20 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     acc_ensemble.append(acc)
                     nmi_ensemble.append(nmi)
 
-                    plt.close()
+                    plt.clf()
                     plt.figure(figsize=(20, 6))
                     plt.plot(vgan.train_history["generator_loss"])
-                    plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
+                    plt.show()
+                    plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
 
-                    plt.close()
-                    plt.plot(vgan.train_history["detector_loss"])
-                    plt.figure(figsize=(20, 1))
-                    plt.savefig(f'{path}VGAN_DLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
-                    plt.close()
+                    plt.clf()
+                    fig = plt.figure()
+                    ax = fig.add_axes([0,0,1,1])
+                    ax.plot(vgan.train_history["detector_loss"])
+                    plt.figure(figsize=(20, 2))
+                    fig.savefig(f'{path}VGAN_DLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300, bbox_inches='tight')
+                    plt.show()
+                    plt.clf()
 
         df = pd.DataFrame({
             "DATABASE": datasets_ensemble,
