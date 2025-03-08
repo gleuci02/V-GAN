@@ -86,7 +86,7 @@ def vgan_training(vgan, X_train):
 
     proba = vgan.proba
 
-    #subspaces, proba = reduce_subspaces(subspaces, proba)
+    subspaces, proba = reduce_subspaces(subspaces, proba)
 
     tup = zip(subspaces, proba)
 
