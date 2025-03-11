@@ -30,8 +30,6 @@ class MMDLossConstrained(nn.Module):
 
     def __init__(self, weight, kernel=RBF()):
         super().__init__()
-        self.pvalues = []
-        self.qvalues = []
         self.kernel = kernel
         self.weight = weight
 

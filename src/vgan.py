@@ -268,6 +268,7 @@ class VGAN:
                     # Make sure there is only 1 observation per row.
                     batch = torch.unflatten(batch, 1, shape)
                     batch_enc, batch_dec = detector(batch)
+                    #batch = batch.reshape(self.batch_size, 3, -1)
                     batch = batch.view(self.batch_size, -1)
 
                     # GET SUBSPACES AND ENCODING-DECODING
@@ -318,6 +319,7 @@ class VGAN:
                     batch_enc, batch_dec = detector(batch)
 
                     batch = batch.view(self.batch_size, -1)
+                    #batch = batch.reshape(self.batch_size, 3, -1)
 
                     # GET SUBSPACES AND ENCODING-DECODING
                     noise_tensor = Variable(noise_tensor.normal_())

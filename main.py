@@ -9,7 +9,7 @@ import pandas as pd
 from src.modules.tools import reduce_subspaces
 from pathlib import Path
 from torch.utils.data import DataLoader
-from src.modules.od_module import VGAN
+from src.modules.od_module import VGAN, VMMD
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -19,6 +19,7 @@ from sklearn.ensemble import BaggingClassifier
 from src.modules.tools import pretrain_autoencoder
 from src.modules.network_module import Detector, Encoder, Decoder
 
+path = "testing/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
@@ -29,9 +30,9 @@ ALGORITHMS = {
 
 DATASETS = {
     #"STL10": load_stl10,
-    #"CIFAR100": load_cifar100,
+    "CIFAR100": load_cifar100,
     #"MNIST": load_mnist,
-    "FASHION_MNIST": load_fashion_mnist,
+    #"FASHION_MNIST": load_fashion_mnist,
     #"CIFAR10": load_cifar10
 }
 
@@ -58,29 +59,45 @@ def visualize_reconstruction(autoencoder, data_loader, device='cuda'):
     plt.savefig('decoded.png')
 
 def plot_subspaces(images, U, dataset, shape):
-
-    images = torch.flatten(images, 1, -1)
     # Select 20 sample images
     num_images = 20
+    rows, cols = 4, 5  # 4 rows, 5 columns
+    
+    #images = torch.flatten(images, 1, -1)
+    U = torch.unflatten(U, 1, shape)
 
     for i in range(num_images):
-        images[i] = images[i] * U[i]
-
-    # Define grid size
-    rows, cols = 4, 5  # 4 rows, 5 columns
+        col_idx = i % cols
+        if col_idx < len(U):
+            images[i] = images[i] * U[col_idx]
+        else:
+            images[i] = images[i] * U[-1]
+    
+    # Reshape images for plotting
+    #images = torch.unflatten(images, 1, shape)
+    images = images.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
+    
     # Create subplots
-    fig, axes = plt.subplots(rows, cols, figsize=(10, 8))
-    images = torch.unflatten(images, 1, shape)
-    images = images.permute(0, 2, 3, 1)
-    # Plot images in the grid
-    print(images.shape)
-    for i, ax in enumerate(axes.flat):
-        print(images[i].shape)
-        ax.imshow(images[i], cmap="gray")
-        ax.axis("off")
+    fig, axes = plt.subplots(rows + 1, cols, figsize=(10, 10))
+    
+    #U = torch.unflatten(U, 1, shape)
+    U = U.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
 
+    # Plot U on the top row
+    for j in range(cols):
+        if j < len(U):
+            axes[0, j].imshow(U[j])
+        axes[0, j].axis("off")
+    
+    # Plot images in the grid
+    for i in range(num_images):
+        row, col = divmod(i, cols)
+        ax = axes[row + 1, col]
+        ax.imshow(images[i])
+        ax.axis("off")
+    
     plt.tight_layout()
-    plt.savefig(f"{dataset}.png")
+    plt.savefig(f"{path}{dataset}.png")
 
 
 def generate_clustering_ensemble(clusterings, amount_cluster):
@@ -197,8 +214,9 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
         # Load dataset
         for i, dataset in enumerate(DATASETS):
-                vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
-                vgan.dataset = dataset
+                #vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
+                vgan = VMMD(epochs=1500, path_to_directory=Path() / "experiments" /f"Example_normal_{datetime.datetime.now()}_vmmd", lr=0.01)
+                #vgan.dataset = dataset
                 print(f"CURRENTLY WORKING FOR {dataset}")
 
                 dataset_train, dataset_test = DATASETS[dataset]()
@@ -206,11 +224,14 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
                 
-                #autoencoder = Detector(32*32*1, 32, 1, Encoder, Decoder)
-                #pretrained_ae = pretrain_autoencoder(autoencoder, dataloader_train, epochs=50, lr=0.001)
+                autoencoder = Detector(32*32*3, 32, 3, Encoder, Decoder)
+                #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=100, lr=0.001)
 
-                #torch.save(pretrained_ae.encoder.state_dict(), f"./AE_Weights/encoder_weights_{dataset}.pth")
-                #torch.save(pretrained_ae.decoder.state_dict(), f"./AE_Weights/decoder_weights_{dataset}.pth")
+                #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_{dataset}.pth")
+                #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_{dataset}.pth")
+
+                autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
+                autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
 
                 # Call visualization function
 
@@ -218,21 +239,34 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
                 #exit()
 
+                # Load the saved weights
+
                 X_train, y_train = next(iter(dataloader_train))
                 #X_test, y_test = next(iter(dataloader_test))
 
                 shape = X_train.shape
 
+                autoencoder.eval()
+    
+                with torch.no_grad():
+                    x_enc, _ = autoencoder(X_train)
+
                 #------Preprosessing with VGAN-----#
-                subspaces = vgan_training(vgan, X_train)
+                #subspaces = vgan_training(vgan, X_train)
+                subspaces = vgan_training(vgan, x_enc)
+
+                #np.random.seed(42)
+                #n_features = X_train.shape[1]
+                #n_models = 3  # Number of classifiers
+                #feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
 
                 plot_subspaces(X_train, subspaces, dataset, shape[1:])
                 exit()
-
+                continue
                 #------End of Preprosessing with VGAN-----#
 
                 for name in ALGORITHMS:
-
+                    exit()
                     clusterings = []
 
                     algorithm = ALGORITHMS[name]
@@ -243,7 +277,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     amount_cluster = algorithm.get_params()["n_clusters"]
 
                     for subspace in subspaces:
-
+                        exit()
                         starting_time = time.time()
                         # Initialize algorithm
 
@@ -287,22 +321,21 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     nmi_ensemble.append(nmi)
 
 
-                    plt.close()
-                    plt.figure(figsize=(20, 6))
-                    plt.plot(range(0, len(accuracys)), accuracys)
-                    #plt.savefig(f'ALLACC_{name}_{dataset}_PRETRAIN_AE_WITHRELUS_ReducedSS__epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
-                    
-                    plt.close()
+                    plt.clf()
                     plt.figure(figsize=(20, 6))
                     plt.plot(vgan.train_history["generator_loss"])
-                    #plt.savefig(f'GLOSS_{dataset}_PRETRAIN_AE_WITHRELUS_ReducedSS_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
+                    plt.show()
+                    plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
 
-                    plt.close()
-                    plt.plot(vgan.train_history["detector_loss"])
-                    plt.figure(figsize=(20, 1))
-                    #plt.savefig(f'DLOSS_{dataset}_PRETRAIN_AE_WITHRELUS_ReducedSS_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.png', dpi=300)
-                    plt.close()
-
+                    plt.clf()
+                    fig = plt.figure()
+                    ax = fig.add_axes([0,0,1,1])
+                    ax.plot(vgan.train_history["detector_loss"])
+                    plt.figure(figsize=(20, 2))
+                    fig.savefig(f'{path}VGAN_DLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300, bbox_inches='tight')
+                    plt.show()
+                    plt.clf()
+        exit()
         df = pd.DataFrame({
             "DATABASE": datasets_ensemble,
             "ALGORITHM": names_ensemble,
@@ -314,7 +347,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
         })
 
         #df.to_csv(f'FB_Ensemble_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
-        df.to_csv(f'PRETRAIN_AE_WITHCONV_CIFAR_100_ReducedSS_{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
+        df.to_csv(f'{path}PRETRAIN_AE_WITHCONV_ReducedSS_{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
         #final_cluster = generate_clustering_ensemble(clusterings, amount_cluster)
 
@@ -331,7 +364,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
         print(f"CURRENTLY WORKING FOR {dataset}")
 
-        df.to_csv(f'ALLACC_PRETRAIN_AE_CIFAR_100_WITHCONV_ReducedSS_epoch{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
+        df.to_csv(f'{path}ALLACC_PRETRAIN_AE_WITHCONV_ReducedSS_epoch{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
 if __name__ == "__main__":
 

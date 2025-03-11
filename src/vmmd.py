@@ -140,13 +140,14 @@ class VMMD:
 
         # MODEL INTIALIZATION#
         epochs = self.epochs
-        self.__latent_size = latent_size = max(int(X.shape[1]/16), 1)
-        ndims = X.shape[1]
+        self.__latent_size = latent_size = X.shape[1]# max(int(X.shape[1]/16), 1)
+        ndims = 32#X.shape[1]
         train_size = X.shape[0]
         self.batch_size = min(self.batch_size, train_size)
+        channel = 3
 
         device = self.device
-        generator = self.get_the_networks(
+        generator, _ = self.get_the_networks(
             ndims, latent_size, device=device)
         optimizer = torch.optim.Adadelta(
             generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
