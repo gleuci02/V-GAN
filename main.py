@@ -3,12 +3,12 @@ from datasets.cifar import load_cifar10, load_cifar100
 from datasets.stl import load_stl10
 #from algorithms.EDSC import edesc
 from sklearn import cluster
-from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
+#from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
 from metrics import normalized_mutual_info_score, clustering_accuracy
 import pandas as pd
 from src.modules.tools import reduce_subspaces
 from pathlib import Path
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from src.modules.od_module import VGAN
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,45 +17,61 @@ import datetime
 import time
 from sklearn.ensemble import BaggingClassifier
 
-path = "results_VGAN/"
+path = "result_RELU/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
+    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    #"Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
 }
 
 DATASETS = {
-    "STL10": load_stl10,
-    "CIFAR100": load_cifar100,
-    "MNIST": load_mnist,
+    #"STL10": load_stl10,
+    #"CIFAR100": load_cifar100,
+    #"MNIST": load_mnist,
     "FASHION_MNIST": load_fashion_mnist,
-    "CIFAR10": load_cifar10
+    #"CIFAR10": load_cifar10
 }
 
 def plot_subspaces(images, U, dataset, shape):
-
     # Select 20 sample images
     num_images = 20
+    rows, cols = 4, 5  # 4 rows, 5 columns
+    
+    #images = torch.flatten(images, 1, -1)
+    #U = torch.unflatten(U, 1, shape)
 
     for i in range(num_images):
-        if i < len(U):
-            images[i] = images[i] * U[i]
-        else:
-            images[i] = images[i] * U[0]
-
-    # Define grid size
-    rows, cols = 4, 5  # 4 rows, 5 columns
-    # Create subplots
-    fig, axes = plt.subplots(rows, cols, figsize=(10, 8))
+        col_idx = i % cols
+        if col_idx < len(U):
+            images[i] = images[i] * U[col_idx]
+        #else:
+        #    images[i] = images[i] * U[-1]
+    
+    # Reshape images for plotting
     images = torch.unflatten(images, 1, shape)
-    images = images.permute(0, 2, 3, 1)
+    images = images.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
+    
+    # Create subplots
+    fig, axes = plt.subplots(rows + 1, cols, figsize=(10, 10))
+    
+    U = torch.unflatten(U, 1, shape)
+    U = U.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
+
+    # Plot U on the top row
+    for j in range(cols):
+        if j < len(U):
+            axes[0, j].imshow(U[j], cmap="gray")
+        axes[0, j].axis("off")
+    
     # Plot images in the grid
-    for i, ax in enumerate(axes.flat):
+    for i in range(num_images):
+        row, col = divmod(i, cols)
+        ax = axes[row + 1, col]
         ax.imshow(images[i], cmap="gray")
         ax.axis("off")
-
+    
     plt.tight_layout()
     plt.savefig(f"{path}{dataset}.png")
 
@@ -81,7 +97,7 @@ def vgan_training(vgan, X_train):
 
     vgan.fit(X_train)
 
-    vgan.approx_subspace_dist(30, add_leftover_features=True)
+    vgan.approx_subspace_dist(500, add_leftover_features=True)
 
     subspaces = vgan.subspaces
 
@@ -116,6 +132,8 @@ def feature_bagging_experiment(batch_size):
 
     for i, dataset in enumerate(DATASETS):
         dataset_train, dataset_test = DATASETS[dataset]()
+
+
 
         dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=False)
         dataloader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False)
@@ -179,7 +197,15 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
                 dataset_train, dataset_test = DATASETS[dataset]()
 
-                dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
+                # Get indices where the label is 1 (Pants)
+                train_indices = [i for i, (_, label) in enumerate(dataset_train) if label == 1]
+                test_indices = [i for i, (_, label) in enumerate(dataset_test) if label == 1]
+
+                # Create filtered datasets
+                filtered_train = Subset(dataset_train, train_indices)
+                filtered_test = Subset(dataset_test, test_indices)
+
+                dataloader_train = DataLoader(filtered_train, batch_size=sample_size, shuffle=False)
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
 
                 X_train, y_train = next(iter(dataloader_train))
@@ -191,6 +217,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 subspaces = vgan_training(vgan, X_train)
 
                 plot_subspaces(X_train, subspaces, dataset, (shape[1], shape[2], shape[3]))
+                exit()
                 #------End of Preprosessing with VGAN-----#
 
                 for name in ALGORITHMS:
@@ -293,8 +320,8 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 if __name__ == "__main__":
 
     sample_size = 2000
-    batch_size = 1000
-    lr_G = 0.01
-    lr_D = 0.01
+    batch_size = 500
+    lr_G = 0.007
+    lr_D = 0.007
 
-    run_experiment(sample_size, batch_size, lr_G, lr_D, 1500)
+    run_experiment(sample_size, batch_size, lr_G, lr_D, 2000)
