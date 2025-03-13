@@ -222,7 +222,7 @@ class VMMD:
 
     def generate_subspaces(self, nsubs):
         # Need to load in cpu as mps Tensor module doesn't properly fix the seed
-        noise_tensor = torch.Tensor(nsubs, self.__latent_size).to('cpu')
+        noise_tensor = torch.Tensor(nsubs, self.__latent_size).to('cuda')
         if not self.seed == None:
             torch.manual_seed(self.seed)
         noise_tensor.normal_()

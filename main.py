@@ -8,7 +8,7 @@ from metrics import normalized_mutual_info_score, clustering_accuracy
 import pandas as pd
 from src.modules.tools import reduce_subspaces
 from pathlib import Path
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from src.modules.od_module import VGAN, VMMD
 import matplotlib.pyplot as plt
 import numpy as np
@@ -30,9 +30,9 @@ ALGORITHMS = {
 
 DATASETS = {
     #"STL10": load_stl10,
-    "CIFAR100": load_cifar100,
+    #"CIFAR100": load_cifar100,
     #"MNIST": load_mnist,
-    #"FASHION_MNIST": load_fashion_mnist,
+    "FASHION_MNIST": load_fashion_mnist,
     #"CIFAR10": load_cifar10
 }
 
@@ -70,8 +70,8 @@ def plot_subspaces(images, U, dataset, shape):
         col_idx = i % cols
         if col_idx < len(U):
             images[i] = images[i] * U[col_idx]
-        else:
-            images[i] = images[i] * U[-1]
+        #else:
+        #    images[i] = images[i] * U[-1]
     
     # Reshape images for plotting
     #images = torch.unflatten(images, 1, shape)
@@ -86,14 +86,14 @@ def plot_subspaces(images, U, dataset, shape):
     # Plot U on the top row
     for j in range(cols):
         if j < len(U):
-            axes[0, j].imshow(U[j])
+            axes[0, j].imshow(U[j], cmap="gray")
         axes[0, j].axis("off")
     
     # Plot images in the grid
     for i in range(num_images):
         row, col = divmod(i, cols)
         ax = axes[row + 1, col]
-        ax.imshow(images[i])
+        ax.imshow(images[i], cmap="gray")
         ax.axis("off")
     
     plt.tight_layout()
@@ -214,17 +214,25 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
         # Load dataset
         for i, dataset in enumerate(DATASETS):
-                #vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
-                vgan = VMMD(epochs=1500, path_to_directory=Path() / "experiments" /f"Example_normal_{datetime.datetime.now()}_vmmd", lr=0.01)
-                #vgan.dataset = dataset
+                vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
+                #vgan = VMMD(epochs=1500, path_to_directory=Path() / "experiments" /f"Example_normal_{datetime.datetime.now()}_vmmd", lr=0.01)
+                vgan.dataset = dataset
                 print(f"CURRENTLY WORKING FOR {dataset}")
 
                 dataset_train, dataset_test = DATASETS[dataset]()
 
-                dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
+                # Get indices where the label is 1 (Pants)
+                train_indices = [i for i, (_, label) in enumerate(dataset_train) if label == 1]
+                test_indices = [i for i, (_, label) in enumerate(dataset_test) if label == 1]
+
+                # Create filtered datasets
+                filtered_train = Subset(dataset_train, train_indices)
+                filtered_test = Subset(dataset_test, test_indices)
+
+                dataloader_train = DataLoader(filtered_train, batch_size=sample_size, shuffle=False)
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
                 
-                autoencoder = Detector(32*32*3, 32, 3, Encoder, Decoder)
+                autoencoder = Detector(32*32*1, 32, 1, Encoder, Decoder)
                 #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=100, lr=0.001)
 
                 #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_{dataset}.pth")
@@ -253,7 +261,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
                 #------Preprosessing with VGAN-----#
                 #subspaces = vgan_training(vgan, X_train)
-                subspaces = vgan_training(vgan, x_enc)
+                subspaces = vgan_training(vgan, X_train)
 
                 #np.random.seed(42)
                 #n_features = X_train.shape[1]

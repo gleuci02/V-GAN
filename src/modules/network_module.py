@@ -181,7 +181,7 @@ class Decoder(nn.Module):
             nn.ReLU(),
             nn.BatchNorm2d(img_size),
             nn.ConvTranspose2d(img_size, channel, 3, stride=2, padding=1, output_padding=1),  # 16x16 -> 32x32 nn.ConvTranspose2d(32, 1, 3, stride=2, padding=1, output_padding=1)
-            nn.Sigmoid()  # CIFAR-10 pixel values are between 0-1
+            nn.Tanh()  # CIFAR-10 pixel values are between 0-1
         )
 
     def forward(self, x):
