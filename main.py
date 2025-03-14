@@ -17,7 +17,7 @@ import datetime
 import time
 from sklearn.ensemble import BaggingClassifier
 
-path = "result_RELU/"
+path = "results_VGAN/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
@@ -28,9 +28,9 @@ ALGORITHMS = {
 
 DATASETS = {
     #"STL10": load_stl10,
-    #"CIFAR100": load_cifar100,
+    "CIFAR100": load_cifar100,
     #"MNIST": load_mnist,
-    "FASHION_MNIST": load_fashion_mnist,
+    #"FASHION_MNIST": load_fashion_mnist,
     #"CIFAR10": load_cifar10
 }
 
@@ -205,7 +205,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 filtered_train = Subset(dataset_train, train_indices)
                 filtered_test = Subset(dataset_test, test_indices)
 
-                dataloader_train = DataLoader(filtered_train, batch_size=sample_size, shuffle=False)
+                dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
 
                 X_train, y_train = next(iter(dataloader_train))
@@ -320,8 +320,8 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 if __name__ == "__main__":
 
     sample_size = 2000
-    batch_size = 500
-    lr_G = 0.007
-    lr_D = 0.007
+    batch_size = 1000
+    lr_G = 0.01
+    lr_D = 0.01
 
-    run_experiment(sample_size, batch_size, lr_G, lr_D, 2000)
+    run_experiment(sample_size, batch_size, lr_G, lr_D, 1500)
