@@ -1,6 +1,7 @@
 import torch
 from collections import defaultdict
 from .models.Generator import Generator, Generator_big
+from .modules.network_module import Detector, Encoder, Decoder
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained
@@ -34,6 +35,7 @@ class VMMD:
         self.weight_decay = weight_decay
         self.path_to_directory = path_to_directory
         self.generator_optimizer = None
+        self.dataset = ""
         self.device = torch.device('cuda:0' if torch.cuda.is_available(
         ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
 
@@ -140,15 +142,23 @@ class VMMD:
 
         # MODEL INTIALIZATION#
         epochs = self.epochs
-        self.__latent_size = latent_size = X.shape[1]# max(int(X.shape[1]/16), 1)
-        ndims = 32#X.shape[1]
+        shape = X[0].shape
+        print(shape)
+        self.__latent_size = latent_size = X.flatten(1, -1).shape[1]# max(int(X.shape[1]/16), 1)
+        ndims = X.shape[1]
         train_size = X.shape[0]
         self.batch_size = min(self.batch_size, train_size)
-        channel = 3
+        channel = X.shape[0]
 
         device = self.device
         generator, _ = self.get_the_networks(
             ndims, latent_size, device=device)
+        
+        detector = Detector(32*32*1, 32, 1, Encoder, Decoder)
+        
+        detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
+        detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
+
         optimizer = torch.optim.Adadelta(
             generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.generator_optimizer = optimizer.__class__.__name__
@@ -196,7 +206,11 @@ class VMMD:
                 fake_subspaces = generator(noise_tensor)
                 # batch_loss = loss_function(batch, fake_subspaces*batch + (fake_subspaces == 1e-08)*torch.mean(batch,dim=0), alphas=[0.1]) #Upper_lower_softmax
                 # batch_loss = loss_function(batch, fake_subspaces*batch + torch.less(batch,1/batch.shape[1])*torch.mean(batch,dim=0), alphas=[0.1]) #Upper softmax
-                batch_loss = loss_function(batch, fake_subspaces*batch + torch.less(
+                
+                batch_enc = detector.encoder(batch.unflatten(1, shape).cpu())
+                proj_batch_enc = detector.encoder((fake_subspaces*batch).unflatten(1, shape).cpu())
+
+                batch_loss = loss_function(batch_enc.to('cuda'), proj_batch_enc.to('cuda') + torch.less(
                     batch, 1/batch.shape[1])*torch.mean(batch, dim=0), fake_subspaces)  # Constrained MMD Loss
                 self.bandwidth = loss_function.bandwidth
                 batch_loss.backward()

@@ -214,8 +214,8 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
         # Load dataset
         for i, dataset in enumerate(DATASETS):
-                vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
-                #vgan = VMMD(epochs=1500, path_to_directory=Path() / "experiments" /f"Example_normal_{datetime.datetime.now()}_vmmd", lr=0.01)
+                #vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
+                vgan = VMMD(epochs=epoch, path_to_directory=Path() / "experiments" /f"Example_normal_{datetime.datetime.now()}_vmmd", lr=lr_G)
                 vgan.dataset = dataset
                 print(f"CURRENTLY WORKING FOR {dataset}")
 
@@ -232,14 +232,14 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 dataloader_train = DataLoader(filtered_train, batch_size=sample_size, shuffle=False)
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
                 
-                autoencoder = Detector(32*32*1, 32, 1, Encoder, Decoder)
-                #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=100, lr=0.001)
+                #autoencoder = Detector(32*32*1, 32, 1, Encoder, Decoder)
+                #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=100, lr=0.002)
 
                 #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_{dataset}.pth")
                 #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_{dataset}.pth")
 
-                autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
-                autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
+                #autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
+                #autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
 
                 # Call visualization function
 
@@ -253,11 +253,6 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #X_test, y_test = next(iter(dataloader_test))
 
                 shape = X_train.shape
-
-                autoencoder.eval()
-    
-                with torch.no_grad():
-                    x_enc, _ = autoencoder(X_train)
 
                 #------Preprosessing with VGAN-----#
                 #subspaces = vgan_training(vgan, X_train)
@@ -327,7 +322,6 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     total_times_ensemble.append(total_time)
                     acc_ensemble.append(acc)
                     nmi_ensemble.append(nmi)
-
 
                     plt.clf()
                     plt.figure(figsize=(20, 6))
