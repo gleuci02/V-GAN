@@ -21,8 +21,8 @@ class VGAN(VGAN):
             device = self.device
         generator = Generator_big(
             img_size=ndims, latent_size=latent_size).to(device)
-        detector = Detector(latent_size, ndims, channel, Encoder, Decoder).to(device)
-        return generator, detector
+        #detector = Detector(latent_size, ndims, channel, Encoder, Decoder).to(device)
+        return generator#, detector
 
     def approx_subspace_dist(self, subspace_count=500, add_leftover_features=False):
         u = self.generate_subspaces(subspace_count)
@@ -50,6 +50,8 @@ class VGAN(VGAN):
         """
         assert count <= x_data.shape[0], "Selected 'count' is greater than the number of samples in the dataset"
         results = []
+
+        x_data = x_data.flatten(1, -1)
 
         x_data = normalize(x_data, axis=0)
         x_sample = torch.Tensor(pd.DataFrame(
@@ -131,13 +133,37 @@ class VMMD(VMMD):
         assert count <= x_data.shape[0], "Selected 'count' is greater than the number of samples in the dataset"
         results = []
 
+        x_data = x_data.flatten(1, -1)
+
         x_data = normalize(x_data, axis=0)
-        x_sample = torch.mps.Tensor(pd.DataFrame(
-            x_data).sample(count).to_numpy()).to('mps:0')
+        x_sample = torch.Tensor(pd.DataFrame(
+            x_data).sample(count).to_numpy()).to(self.device)
+        
+        x_sample = torch.unflatten(x_sample, 1, self.shape)
+        x_sample = self.detector.encoder(x_sample)
+        x_sample = torch.flatten(x_sample, 1, -1)
+
         u_subspaces = self.generate_subspaces(count)
+        u_subspaces = torch.unflatten(u_subspaces, 1, self.shape[1:])
+
+        print(x_sample.shape)
+        print(u_subspaces.shape)
+        print(x_sample.unflatten(1, self.shape).shape)
+
+        x_sample_reshaped = x_sample.unflatten(1, self.shape)  # Reshape to match u_subspaces
+
+        #ux_sample = x_sample_reshaped * u_subspaces
+
         ux_sample = u_subspaces * \
-            torch.mps.Tensor(x_sample).to(self.device) + \
-            torch.mean(x_sample, dim=0)*(~u_subspaces)
+            torch.Tensor(x_sample).unflatten(1, self.shape).to(self.device) + ~u_subspaces#\
+            #torch.mean(x_sample, dim=0).unflatten(1, self.shape)*(~u_subspaces)
+        
+        print(ux_sample.shape)
+        
+        ux_sample = torch.unflatten(ux_sample, 1, self.shape)
+        ux_sample = self.detector.encoder(ux_sample)
+        ux_sample = torch.flatten(ux_sample, 1, -1)
+
         if type(bandwidth) == float:
             bandwidth = [bandwidth]
 

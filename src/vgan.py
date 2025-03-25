@@ -217,10 +217,14 @@ class VGAN:
                 X, batch_size=self.batch_size, drop_last=True, pin_memory=mps, shuffle=True)
         batch_number = data_loader.__len__()
         
-        gen_optimizer = torch.optim.Adadelta(
-            generator.parameters(), lr=self.lr_G, weight_decay=self.weight_decay)
-        det_optimizer = torch.optim.Adadelta(
-            detector.parameters(), lr=self.lr_D, weight_decay=self.weight_decay)
+        #gen_optimizer = torch.optim.Adadelta(
+        #    generator.parameters(), lr=self.lr_G, weight_decay=self.weight_decay)
+        #det_optimizer = torch.optim.Adadelta(
+        #    detector.parameters(), lr=self.lr_D, weight_decay=self.weight_decay)
+        
+        gen_optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr_G, betas=(0.9, 0.999))
+        det_optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr_D, betas=(0.9, 0.999))
+
         self.generator_optimizer = gen_optimizer.__class__.__name__
         self.detector_optimizer = det_optimizer.__class__.__name__
         loss_function = MMDLossConstrained(weight=self.temperature)

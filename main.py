@@ -19,21 +19,21 @@ from sklearn.ensemble import BaggingClassifier
 from src.modules.tools import pretrain_autoencoder
 from src.modules.network_module import Detector, Encoder, Decoder
 
-path = "testing/"
+path = "results_vmmd_pretrainedAE/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    #"Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
+    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
 }
 
 DATASETS = {
-    #"STL10": load_stl10,
-    #"CIFAR100": load_cifar100,
-    #"MNIST": load_mnist,
+    "MNIST": load_mnist,
+    "CIFAR10": load_cifar10,
+    "STL10": load_stl10,
+    "CIFAR100": load_cifar100,
     "FASHION_MNIST": load_fashion_mnist,
-    #"CIFAR10": load_cifar10
 }
 
 def visualize_reconstruction(autoencoder, data_loader, device='cuda'):
@@ -63,26 +63,24 @@ def plot_subspaces(images, U, dataset, shape):
     num_images = 20
     rows, cols = 4, 5  # 4 rows, 5 columns
     
-    #images = torch.flatten(images, 1, -1)
-    U = torch.unflatten(U, 1, shape)
+    U = torch.unflatten(U, 1, shape[1:])
 
+    selected_images = []
     for i in range(num_images):
         col_idx = i % cols
         if col_idx < len(U):
             images[i] = images[i] * U[col_idx]
-        #else:
-        #    images[i] = images[i] * U[-1]
+            #selected_images.append(images[i][:, U[col_idx]])
     
+    #selected_images = torch.stack(selected_images)
+
     # Reshape images for plotting
-    #images = torch.unflatten(images, 1, shape)
+    #selected_images = selected_images.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
     images = images.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
     
     # Create subplots
     fig, axes = plt.subplots(rows + 1, cols, figsize=(10, 10))
     
-    #U = torch.unflatten(U, 1, shape)
-    U = U.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
-
     # Plot U on the top row
     for j in range(cols):
         if j < len(U):
@@ -98,6 +96,7 @@ def plot_subspaces(images, U, dataset, shape):
     
     plt.tight_layout()
     plt.savefig(f"{path}{dataset}.png")
+    print(f"{path}{dataset}.png")
 
 
 def generate_clustering_ensemble(clusterings, amount_cluster):
@@ -121,7 +120,8 @@ def generate_clustering_ensemble(clusterings, amount_cluster):
 def vgan_training(vgan, X_train):
 
     vgan.fit(X_train)
-
+    #latent_size = max(int(X_train.flatten(1, -1).shape[1]/16), 1)
+    #vgan.load_models("./experiments/Example_normal_2025-03-16 14:17:39.055543_vmmd/models/generator_0.pt", X_train.shape[2], latent_size)
     vgan.approx_subspace_dist(500, add_leftover_features=True)
 
     subspaces = vgan.subspaces
@@ -137,63 +137,6 @@ def vgan_training(vgan, X_train):
     subspaces = [x[0] for x in subspaces]
 
     return torch.tensor(subspaces).cpu()
-
-def feature_bagging(algo, X_train, X_test, y_train):
-    bagging = BaggingClassifier(estimator=algo, n_estimators=30)
-
-    bagging.fit(X_train, y_train)
-
-    y_pred = bagging.predict(X_test)
-
-    return y_pred
-
-def feature_bagging_experiment(batch_size):
-
-    datasets = []
-    total_times = []
-    nmis = []
-    accuracys = []    # 5 datasets
-    names = []
-
-    for i, dataset in enumerate(DATASETS):
-        dataset_train, dataset_test = DATASETS[dataset]()
-
-        dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=False)
-        dataloader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False)
-
-        X_train, y_train = next(iter(dataloader_train))
-        X_test, y_test = next(iter(dataloader_test))
-
-        for name in ALGORITHMS:
-
-            algorithm = ALGORITHMS[name]
-
-            if dataset == "CIFAR100":
-                    algorithm.set_params(n_clusters=100)
-            
-            starting_time = time.time()
-            y_pred = feature_bagging(algo=algorithm, X_train=X_train, X_test=X_test, y_train=y_train)
-            end_time = time.time()
-            total_time = end_time - starting_time
-
-            nmi = normalized_mutual_info_score(y_test, y_pred)
-            acc = clustering_accuracy(y_test, y_pred)
-
-            nmis.append(nmi)
-            accuracys.append(acc)
-            datasets.append(dataset)
-            names.append(name)
-            total_times.append(total_time)
-
-    df = pd.DataFrame({
-            "DATABASE": datasets,
-            "ALGORITHM": names,
-            "TIME TAKEN": total_times,
-            "NMI": nmis,
-            "ACC": accuracys
-        })
-
-    df.to_csv(f'Feature_bagging.csv')
 
 
 def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
@@ -216,6 +159,9 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
         for i, dataset in enumerate(DATASETS):
                 #vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
                 vgan = VMMD(epochs=epoch, path_to_directory=Path() / "experiments" /f"Example_normal_{datetime.datetime.now()}_vmmd", lr=lr_G)
+                vgan.seed = 42
+                torch.manual_seed(42)
+                np.random.seed(42)
                 vgan.dataset = dataset
                 print(f"CURRENTLY WORKING FOR {dataset}")
 
@@ -229,34 +175,39 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 filtered_train = Subset(dataset_train, train_indices)
                 filtered_test = Subset(dataset_test, test_indices)
 
-                dataloader_train = DataLoader(filtered_train, batch_size=sample_size, shuffle=False)
+                dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
+
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
-                
-                #autoencoder = Detector(32*32*1, 32, 1, Encoder, Decoder)
-                #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=100, lr=0.002)
+
+                X_train, y_train = next(iter(dataloader_train))
+                #X_test, y_test = next(iter(dataloader_test))
+
+                #latent_size = X_train.flatten(1, -1).shape[1] #max(int(X_train.flatten(1, -1).shape[1]/16), 1) 
+                #ndims = X_train.shape[2]
+                #channel = X_train.shape[1]
+
+                #autoencoder = Detector(latent_size, ndims, channel, Encoder, Decoder)
+                #autoencoder.to('cuda')
+                #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=150, lr=0.002)
 
                 #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_{dataset}.pth")
                 #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_{dataset}.pth")
-
+                
                 #autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
                 #autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
 
                 # Call visualization function
 
-                #visualize_reconstruction(pretrained_ae, dataloader_train)
-
-                #exit()
+                #visualize_reconstruction(autoencoder, dataloader_train)
 
                 # Load the saved weights
-
-                X_train, y_train = next(iter(dataloader_train))
-                #X_test, y_test = next(iter(dataloader_test))
-
+                
                 shape = X_train.shape
 
                 #------Preprosessing with VGAN-----#
                 #subspaces = vgan_training(vgan, X_train)
                 subspaces = vgan_training(vgan, X_train)
+                print(shape)
 
                 #np.random.seed(42)
                 #n_features = X_train.shape[1]
@@ -264,12 +215,12 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
 
                 plot_subspaces(X_train, subspaces, dataset, shape[1:])
-                exit()
-                continue
+                
+                #continue
                 #------End of Preprosessing with VGAN-----#
 
                 for name in ALGORITHMS:
-                    exit()
+                    
                     clusterings = []
 
                     algorithm = ALGORITHMS[name]
@@ -280,12 +231,13 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     amount_cluster = algorithm.get_params()["n_clusters"]
 
                     for subspace in subspaces:
-                        exit()
+                        
                         starting_time = time.time()
                         # Initialize algorithm
 
-                        X_train = torch.flatten(X_train, 1, -1)
+                        subspace = torch.unflatten(subspace, 0, shape[2:])
                         X_new = X_train * subspace
+                        X_new = torch.flatten(X_new, 1, -1)
 
                         y_pred = algorithm.fit_predict(X_new)
 
@@ -312,11 +264,11 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     X_new = np.array(X_new)
                     X_new = torch.as_tensor(X_new, device=torch.device('cpu'))
 
-                    result, bandwith = vgan.check_if_myopic(X_train, [vgan.bandwidth.cpu()], len(X_train))
+                    #result, bandwith = vgan.check_if_myopic(X_train, [vgan.bandwidth.cpu()], len(X_train))
                     #df.to_csv(f'FB_{name}{dataset}check_if_myopic.csv')
 
-                    bandwiths.append(bandwith)
-                    results.append(result)
+                    #bandwiths.append(bandwith)
+                    #results.append(result)
                     datasets_ensemble.append(dataset)
                     names_ensemble.append(name)
                     total_times_ensemble.append(total_time)
@@ -328,24 +280,16 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     plt.plot(vgan.train_history["generator_loss"])
                     plt.show()
                     plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
-
                     plt.clf()
-                    fig = plt.figure()
-                    ax = fig.add_axes([0,0,1,1])
-                    ax.plot(vgan.train_history["detector_loss"])
-                    plt.figure(figsize=(20, 2))
-                    fig.savefig(f'{path}VGAN_DLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300, bbox_inches='tight')
-                    plt.show()
-                    plt.clf()
-        exit()
+        
         df = pd.DataFrame({
             "DATABASE": datasets_ensemble,
             "ALGORITHM": names_ensemble,
             "TIME TAKEN": total_times_ensemble,
             "NMI": nmi_ensemble,
             "ACC": acc_ensemble,
-            "PValue": results,
-            "bandwidth": bandwiths
+            #"PValue": results,
+            #"bandwidth": bandwiths
         })
 
         #df.to_csv(f'FB_Ensemble_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
@@ -372,7 +316,10 @@ if __name__ == "__main__":
 
     sample_size = 2000
     batch_size = 1000
-    lr_G = 0.01
-    lr_D = 0.01
+    lr_G = 0.00001
+    lr_D = 0.00001
 
-    run_experiment(sample_size, batch_size, lr_G, lr_D, 1500)
+    torch.manual_seed(42)
+    np.random.seed(42)
+
+    run_experiment(sample_size, batch_size, lr_G, lr_D, 10000)
