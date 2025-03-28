@@ -29,10 +29,10 @@ ALGORITHMS = {
 }
 
 DATASETS = {
-    "MNIST": load_mnist,
-    "CIFAR10": load_cifar10,
-    "STL10": load_stl10,
-    "CIFAR100": load_cifar100,
+    #"MNIST": load_mnist,
+    #"CIFAR10": load_cifar10,
+    #"STL10": load_stl10,
+    #"CIFAR100": load_cifar100,
     "FASHION_MNIST": load_fashion_mnist,
 }
 
@@ -207,7 +207,6 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #------Preprosessing with VGAN-----#
                 #subspaces = vgan_training(vgan, X_train)
                 subspaces = vgan_training(vgan, X_train)
-                print(shape)
 
                 #np.random.seed(42)
                 #n_features = X_train.shape[1]
@@ -215,7 +214,16 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
 
                 plot_subspaces(X_train, subspaces, dataset, shape[1:])
-                
+
+                test = vgan.check_if_myopic(X_train, [vgan.bandwidth.cpu()], len(X_train))
+                test.to_csv(f'{path}ifmyopic{dataset}.csv')
+                print(f'{path}ifmyopic{dataset}.csv')
+
+                plt.clf()
+                plt.figure(figsize=(20, 6))
+                plt.plot(vgan.train_history["generator_loss"])
+                plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
+                exit()
                 #continue
                 #------End of Preprosessing with VGAN-----#
 
@@ -316,10 +324,10 @@ if __name__ == "__main__":
 
     sample_size = 2000
     batch_size = 1000
-    lr_G = 0.00001
-    lr_D = 0.00001
+    lr_G = 0.001
+    lr_D = 0.001
 
     torch.manual_seed(42)
     np.random.seed(42)
 
-    run_experiment(sample_size, batch_size, lr_G, lr_D, 10000)
+    run_experiment(sample_size, batch_size, lr_G, lr_D, 3000)
