@@ -166,12 +166,12 @@ class VMMD:
         detector = Detector(X.flatten(1, -1).shape[1], ndims, channel, Encoder, Decoder)
         detector.to(device)
         
-        detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
-        detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
+        detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_small_{self.dataset}.pth"))
+        detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_small_{self.dataset}.pth"))
 
         #optimizer = torch.optim.Adadelta(
         #    generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr, betas=(0.9, 0.999))
+        optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr, betas=(0.5, 0.999))
         scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=100, threshold=1e-3, threshold_mode='rel', eps=1e-50, verbose=True)
         self.generator_optimizer = optimizer.__class__.__name__
         # loss_function =  tts.MMDStatistic(self.batch_size, self.batch_size)
@@ -217,18 +217,13 @@ class VMMD:
                 optimizer.zero_grad()
                 fake_subspaces = generator(noise_tensor)
                 
-                # batch_loss = loss_function(batch, fake_subspaces*batch + (fake_subspaces == 1e-08)*torch.mean(batch,dim=0), alphas=[0.1]) #Upper_lower_softmax
-                # batch_loss = loss_function(batch, fake_subspaces*batch + torch.less(batch,1/batch.shape[1])*torch.mean(batch,dim=0), alphas=[0.1]) #Upper softmax
-                
                 batch_enc = detector.encoder(batch.unflatten(1, shape).to('cuda'))
 
-                proj_batch = fake_subspaces[:, np.newaxis] * batch.unflatten(1, (shape[0], shape[1]*shape[1]))
+                proj_batch = fake_subspaces * batch_enc
 
-                proj_batch_enc = detector.encoder(proj_batch.unflatten(2, shape[1:]).to('cuda'))
+                proj_batch_dec = detector.decoder(proj_batch.to('cuda'))
 
-                test = proj_batch_enc.to('cuda') + torch.less(batch, 1/batch.shape[1])*torch.mean(batch, dim=0)
-
-                batch_loss = loss_function(batch_enc.to('cuda'), proj_batch_enc.to('cuda') + torch.less(
+                batch_loss = loss_function(batch.to('cuda'), proj_batch_dec.to('cuda').flatten(1, -1) + torch.less(
                     batch, 1/batch.shape[1])*torch.mean(batch, dim=0), fake_subspaces)  # Constrained MMD Loss
                 self.bandwidth = loss_function.bandwidth
                 batch_loss.backward()
@@ -236,6 +231,7 @@ class VMMD:
                 generator_loss += float(batch_loss.to(
                     'cpu').detach().numpy())/batch_number
             scheduler.step(generator_loss)
+
             for param_group in optimizer.param_groups:
                 print(f"Epoch {epoch+1}, Learning Rate: {param_group['lr']}")
 

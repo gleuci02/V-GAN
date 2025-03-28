@@ -133,36 +133,26 @@ class VMMD(VMMD):
         assert count <= x_data.shape[0], "Selected 'count' is greater than the number of samples in the dataset"
         results = []
 
-        x_data = x_data.flatten(1, -1)
-
+        x_data = x_data.reshape(x_data.shape[0], -1)
+        print(x_data.shape)
+        
         x_data = normalize(x_data, axis=0)
         x_sample = torch.Tensor(pd.DataFrame(
             x_data).sample(count).to_numpy()).to(self.device)
         
-        x_sample = torch.unflatten(x_sample, 1, self.shape)
-        x_sample = self.detector.encoder(x_sample)
-        x_sample = torch.flatten(x_sample, 1, -1)
-
         u_subspaces = self.generate_subspaces(count)
-        u_subspaces = torch.unflatten(u_subspaces, 1, self.shape[1:])
+
+        x_sample = x_sample.unflatten(1, self.shape)
 
         print(x_sample.shape)
-        print(u_subspaces.shape)
-        print(x_sample.unflatten(1, self.shape).shape)
 
-        x_sample_reshaped = x_sample.unflatten(1, self.shape)  # Reshape to match u_subspaces
+        x_sample_enc = self.detector.encoder(x_sample)
 
-        #ux_sample = x_sample_reshaped * u_subspaces
-
-        ux_sample = u_subspaces * \
-            torch.Tensor(x_sample).unflatten(1, self.shape).to(self.device) + ~u_subspaces#\
-            #torch.mean(x_sample, dim=0).unflatten(1, self.shape)*(~u_subspaces)
+        ux_sample_enc = u_subspaces * \
+            torch.Tensor(x_sample_enc).to(self.device) + \
+            torch.mean(x_sample_enc, dim=0)*(~u_subspaces)
         
-        print(ux_sample.shape)
-        
-        ux_sample = torch.unflatten(ux_sample, 1, self.shape)
-        ux_sample = self.detector.encoder(ux_sample)
-        ux_sample = torch.flatten(ux_sample, 1, -1)
+        ux_sample_dec = self.detector.decoder(ux_sample_enc)
 
         if type(bandwidth) == float:
             bandwidth = [bandwidth]
@@ -170,19 +160,22 @@ class VMMD(VMMD):
         if not hasattr(self, 'bandwidth'):
             mmd_loss = MMDLossConstrained(0)
             mmd_loss.forward(
-                x_sample, ux_sample, u_subspaces*1)
+                x_sample, ux_sample_dec, u_subspaces*1)
             self.bandwidth = mmd_loss.bandwidth
+
+        x_sample = x_sample.flatten(1, -1)
+        ux_sample_dec = ux_sample_dec.flatten(1, -1)
 
         bandwidth.sort()
         for bw in bandwidth:
             mmd = tts.MMDStatistic(count, count)
-            _, distances = mmd(x_sample, ux_sample, alphas=[
+            _, distances = mmd(x_sample, ux_sample_dec, alphas=[
                 bw], ret_matrix=True)
             results.append(mmd.pval(distances))
 
         bw = self.bandwidth.item()
         mmd = tts.MMDStatistic(count, count)
-        _, distances = mmd(x_sample, ux_sample, alphas=[
+        _, distances = mmd(x_sample, ux_sample_dec, alphas=[
             bw], ret_matrix=True)
         results.append(mmd.pval(distances))
 

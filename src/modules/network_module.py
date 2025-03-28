@@ -160,7 +160,7 @@ class Encoder(nn.Module):
             nn.ReLU(),
             nn.BatchNorm2d(4*img_size)
         )
-        self.fc_mu = nn.Linear(int((img_size / 16)*img_size * img_size), latent_size)  # Latent vector
+        self.fc_mu = nn.Linear(int((img_size / 16)*img_size * img_size), 2*img_size)  # Latent vector
 
     def forward(self, x):
         x = self.encoder(x)
@@ -172,7 +172,7 @@ class Decoder(nn.Module):
     def __init__(self, latent_size, img_size, channel):
         super(Decoder, self).__init__()
         self.img_size = img_size
-        self.fc = nn.Linear(latent_size, int((img_size/16)*img_size * img_size))  # Expand to feature map
+        self.fc = nn.Linear(2*img_size, int((img_size/16)*img_size * img_size))  # Expand to feature map
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(4*img_size, 2*img_size, 3, stride=2, padding=1, output_padding=1),  # 4x4 -> 8x8 nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1),
             nn.ReLU(),

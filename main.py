@@ -19,7 +19,7 @@ from sklearn.ensemble import BaggingClassifier
 from src.modules.tools import pretrain_autoencoder
 from src.modules.network_module import Detector, Encoder, Decoder
 
-path = "results_vmmd_pretrainedAE/"
+path = "testing/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
@@ -58,29 +58,30 @@ def visualize_reconstruction(autoencoder, data_loader, device='cuda'):
     plt.suptitle("Original vs Reconstructed Images")
     plt.savefig('decoded.png')
 
-def plot_subspaces(images, U, dataset, shape):
+def plot_subspaces(vgan, images, U, dataset, shape):
     # Select 20 sample images
     num_images = 20
     rows, cols = 4, 5  # 4 rows, 5 columns
     
-    U = torch.unflatten(U, 1, shape[1:])
+    #U = torch.unflatten(U, 1, shape[1:])
 
-    selected_images = []
+    enc = vgan.detector.encoder
+    dec = vgan.detector.decoder
+
     for i in range(num_images):
         col_idx = i % cols
         if col_idx < len(U):
-            images[i] = images[i] * U[col_idx]
-            #selected_images.append(images[i][:, U[col_idx]])
-    
-    #selected_images = torch.stack(selected_images)
+            proj_enc = enc(images.to('cuda')) * U[col_idx].to('cuda')
+            images[i] = dec(proj_enc)[i]
 
     # Reshape images for plotting
-    #selected_images = selected_images.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
-    images = images.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
+    images = images.permute(0, 2, 3, 1).cpu().detach().numpy().astype("float32")
     
     # Create subplots
     fig, axes = plt.subplots(rows + 1, cols, figsize=(10, 10))
     
+    U = dec(U.float().to('cuda')).permute(0, 2, 3, 1).cpu().detach().numpy()
+
     # Plot U on the top row
     for j in range(cols):
         if j < len(U):
@@ -190,8 +191,8 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #autoencoder.to('cuda')
                 #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=150, lr=0.002)
 
-                #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_{dataset}.pth")
-                #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_{dataset}.pth")
+                #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_small_{dataset}.pth")
+                #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_small_{dataset}.pth")
                 
                 #autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
                 #autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
@@ -199,8 +200,6 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 # Call visualization function
 
                 #visualize_reconstruction(autoencoder, dataloader_train)
-
-                # Load the saved weights
                 
                 shape = X_train.shape
 
@@ -214,8 +213,17 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #n_models = 3  # Number of classifiers
                 #feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
 
-                plot_subspaces(X_train, subspaces, dataset, shape[1:])
-                
+                plot_subspaces(vgan, X_train, subspaces, dataset, shape[1:])
+                test = vgan.check_if_myopic(X_train.detach().numpy(), [vgan.bandwidth.cpu()], len(X_train))
+                test.to_csv(f'{path}ifmyopic{dataset}.csv')
+                print(f'{path}ifmyopic{dataset}.csv')
+
+
+                plt.clf()
+                plt.figure(figsize=(20, 6))
+                plt.plot(vgan.train_history["generator_loss"])
+                plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
+                exit()
                 #continue
                 #------End of Preprosessing with VGAN-----#
 
@@ -322,4 +330,4 @@ if __name__ == "__main__":
     torch.manual_seed(42)
     np.random.seed(42)
 
-    run_experiment(sample_size, batch_size, lr_G, lr_D, 10000)
+    run_experiment(sample_size, batch_size, lr_G, lr_D, 3000)

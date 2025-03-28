@@ -47,18 +47,18 @@ class Generator_big(nn.Module):
 
         self.main = nn.Sequential(
             nn.Linear(latent_size, 2*latent_size),
-            #nn.BatchNorm1d(2*latent_size),
-            #nn.LeakyReLU(),
+            nn.BatchNorm1d(2*latent_size),
+            nn.LeakyReLU(),
             nn.Linear(2*latent_size, 4*latent_size),
-            #nn.BatchNorm1d(4*latent_size),
-            #nn.LeakyReLU(),
+            nn.BatchNorm1d(4*latent_size),
+            nn.LeakyReLU(),
             nn.Linear(4*latent_size, 8*latent_size),
-            #nn.BatchNorm1d(8*latent_size),
-            #nn.LeakyReLU(),
-            nn.Linear(8*latent_size, img_size*img_size),
-            #nn.BatchNorm1d(img_size*img_size),
-            #nn.LeakyReLU(),
-            upper_softmax(),
+            nn.BatchNorm1d(8*latent_size),
+            nn.LeakyReLU(),
+            nn.Linear(8*latent_size, latent_size),
+            nn.BatchNorm1d(latent_size),
+            nn.LeakyReLU(),
+            upper_lower_softmax(),
         )
 
     def forward(self, z):
