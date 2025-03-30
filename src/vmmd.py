@@ -2,6 +2,7 @@ import torch
 from collections import defaultdict
 from .models.Generator import Generator, Generator_big
 from .modules.network_module import Detector, Encoder, Decoder
+from .modules.vanilla_vae import VanillaVAE
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained
@@ -163,11 +164,19 @@ class VMMD:
         print(X.flatten(1, -1).shape[1])
         print(ndims)
         print(channel)
-        detector = Detector(X.flatten(1, -1).shape[1], ndims, channel, Encoder, Decoder)
-        detector.to(device)
+        #detector = Detector(X.flatten(1, -1).shape[1], ndims, channel, Encoder, Decoder)
+        detector = VanillaVAE(channel, latent_size)
+        #detector.to(device)
         
-        detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_small_{self.dataset}.pth"))
-        detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_small_{self.dataset}.pth"))
+        #Encoder = detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_vae_{self.dataset}.pth"))
+        #Decoder = detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_vae_{self.dataset}.pth"))
+
+        Encoder = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
+        Encoder.to(device)
+        Encoder.eval()
+        Decoder = Encoder.fc
+        Decoder.to(device)
+        Encoder.fc = torch.nn.Identity()
 
         #optimizer = torch.optim.Adadelta(
         #    generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -216,14 +225,14 @@ class VMMD:
                 # OPTIMIZATION STEP#
                 optimizer.zero_grad()
                 fake_subspaces = generator(noise_tensor)
-                
-                batch_enc = detector.encoder(batch.unflatten(1, shape).to('cuda'))
+
+                batch_enc = Encoder(batch.unflatten(1, shape).to('cuda'))
 
                 proj_batch = fake_subspaces * batch_enc
 
-                proj_batch_dec = detector.decoder(proj_batch.to('cuda'))
+                proj_batch_dec = Decoder(proj_batch.to('cuda'))
 
-                batch_loss = loss_function(batch.to('cuda'), proj_batch_dec.to('cuda').flatten(1, -1) + torch.less(
+                batch_loss = loss_function(batch.to('cuda').flatten(1, -1), proj_batch_dec.to('cuda').flatten(1, -1) + torch.less(
                     batch, 1/batch.shape[1])*torch.mean(batch, dim=0), fake_subspaces)  # Constrained MMD Loss
                 self.bandwidth = loss_function.bandwidth
                 batch_loss.backward()

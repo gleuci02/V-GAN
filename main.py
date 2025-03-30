@@ -16,10 +16,11 @@ import torch
 import datetime
 import time
 from sklearn.ensemble import BaggingClassifier
-from src.modules.tools import pretrain_autoencoder
+from src.modules.tools import pretrain_autoencoder, train_vae
 from src.modules.network_module import Detector, Encoder, Decoder
+from src.modules.vanilla_vae import VanillaVAE
 
-path = "testing/"
+path = "results_latentSpace/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
@@ -29,8 +30,8 @@ ALGORITHMS = {
 }
 
 DATASETS = {
-    "MNIST": load_mnist,
-    "CIFAR10": load_cifar10,
+    #"MNIST": load_mnist,
+    #"CIFAR10": load_cifar10,
     "STL10": load_stl10,
     "CIFAR100": load_cifar100,
     "FASHION_MNIST": load_fashion_mnist,
@@ -41,18 +42,19 @@ def visualize_reconstruction(autoencoder, data_loader, device='cuda'):
     
     batch = next(iter(data_loader))[0].to(device)  # Get a batch
     with torch.no_grad():
-        _, recon = autoencoder(batch)
+        recon, _, _, _ = autoencoder(batch)
 
-    recon = torch.unflatten(recon, 1, batch[0].shape)
+    print(recon.shape)
+    #recon = torch.unflatten(recon, 1, batch[0].shape)
 
     batch = batch.cpu().permute(0, 2, 3, 1).numpy()  # Convert to (H, W, C)
     recon = recon.cpu().permute(0, 2, 3, 1).numpy()
 
     fig, axes = plt.subplots(2, 8, figsize=(12, 3))
     for i in range(8):
-        axes[0, i].imshow(batch[i])
+        axes[0, i].imshow(batch[i], cmap="gray")
         axes[0, i].axis("off")
-        axes[1, i].imshow(np.clip(recon[i], 0, 1))  # Clip to valid range
+        axes[1, i].imshow(recon[i], cmap="gray")  # Clip to valid range
         axes[1, i].axis("off")
 
     plt.suptitle("Original vs Reconstructed Images")
@@ -182,17 +184,19 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
                 X_train, y_train = next(iter(dataloader_train))
                 #X_test, y_test = next(iter(dataloader_test))
-
-                #latent_size = X_train.flatten(1, -1).shape[1] #max(int(X_train.flatten(1, -1).shape[1]/16), 1) 
-                #ndims = X_train.shape[2]
-                #channel = X_train.shape[1]
+                
+                latent_size = 128#max(int(X_train.flatten(1, -1).shape[1]/16), 1) #X_train.flatten(1, -1).shape[1] #
+                ndims = X_train.shape[2]
+                channel = X_train.shape[1]
 
                 #autoencoder = Detector(latent_size, ndims, channel, Encoder, Decoder)
+                #autoencoder = VanillaVAE(channel, latent_size)
                 #autoencoder.to('cuda')
                 #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=150, lr=0.002)
+                #autoencoder = train_vae(autoencoder, dataloader_train, lr=0.005, num_epochs=100)
 
-                #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_small_{dataset}.pth")
-                #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_small_{dataset}.pth")
+                #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_vae_{dataset}.pth")
+                #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_vae_{dataset}.pth")
                 
                 #autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
                 #autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
@@ -204,7 +208,6 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 shape = X_train.shape
 
                 #------Preprosessing with VGAN-----#
-                #subspaces = vgan_training(vgan, X_train)
                 subspaces = vgan_training(vgan, X_train)
                 print(shape)
 
@@ -324,8 +327,8 @@ if __name__ == "__main__":
 
     sample_size = 2000
     batch_size = 1000
-    lr_G = 0.00001
-    lr_D = 0.00001
+    lr_G = 0.001
+    lr_D = 0.001
 
     torch.manual_seed(42)
     np.random.seed(42)

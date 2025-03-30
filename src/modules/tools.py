@@ -96,3 +96,53 @@ def pretrain_autoencoder(detector, dataloader, epochs=10, lr=0.001, device='cuda
         print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss/len(dataloader):.6f}")
 
     return detector  # Return pretrained detector
+
+def train_vae(model, train_loader, lr=1e-3, num_epochs=20, kld_weight=0.00025, device=None):
+    """
+    Trains a Variational Autoencoder (VAE).
+    
+    :param model: The VAE model instance.
+    :param dataset: The dataset to train on.
+    :param latent_dim: Dimension of the latent space.
+    :param batch_size: Batch size for training.
+    :param lr: Learning rate for the optimizer.
+    :param num_epochs: Number of training epochs.
+    :param kld_weight: Weight for KL divergence term.
+    :param device: The device (CPU or CUDA) to run training on.
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Move model to device
+    model = model.to(device)
+    
+    # Define optimizer
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    
+    # Training loop
+    for epoch in range(num_epochs):
+        model.train()
+        train_loss = 0
+        
+        for batch_idx, (data, _) in enumerate(train_loader):
+            data = data.to(device)
+            optimizer.zero_grad()
+            
+            # Forward pass
+            outputs, _, mu, log_var = model(data)
+            
+            # Compute loss
+            loss_dict = model.loss_function(outputs, data, mu, log_var, M_N=kld_weight)
+            loss = loss_dict['loss']
+            
+            # Backpropagation
+            loss.backward()
+            optimizer.step()
+            
+            train_loss += loss.item()
+        
+        avg_loss = train_loss / len(train_loader)
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
+    
+    print("Training complete!")
+    return model
