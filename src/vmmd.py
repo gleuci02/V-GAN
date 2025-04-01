@@ -226,9 +226,7 @@ class VMMD:
 
                 proj_batch_enc = detector.encoder(proj_batch.unflatten(2, shape[1:]).to('cuda'))
 
-                test = proj_batch_enc.to('cuda') + torch.less(batch, 1/batch.shape[1])*torch.mean(batch, dim=0)
-
-                batch_loss = loss_function(batch_enc.to('cuda'), proj_batch_enc.to('cuda') + torch.less(
+                batch_loss = loss_function(batch.flatten(1, -1).to('cuda'), proj_batch.flatten(1, -1).to('cuda') + torch.less(
                     batch, 1/batch.shape[1])*torch.mean(batch, dim=0), fake_subspaces)  # Constrained MMD Loss
                 self.bandwidth = loss_function.bandwidth
                 batch_loss.backward()

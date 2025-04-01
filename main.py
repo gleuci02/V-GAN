@@ -324,8 +324,8 @@ if __name__ == "__main__":
 
     sample_size = 2000
     batch_size = 1000
-    lr_G = 0.001
-    lr_D = 0.001
+    lr_G = 0.01
+    lr_D = 0.01
 
     torch.manual_seed(42)
     np.random.seed(42)
