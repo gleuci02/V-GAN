@@ -31,7 +31,7 @@ ALGORITHMS = {
 
 DATASETS = {
     #"MNIST": load_mnist,
-    #"CIFAR10": load_cifar10,
+    "CIFAR10": load_cifar10,
     "STL10": load_stl10,
     "CIFAR100": load_cifar100,
     "FASHION_MNIST": load_fashion_mnist,

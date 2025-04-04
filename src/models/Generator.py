@@ -55,7 +55,7 @@ class Generator_big(nn.Module):
             nn.Linear(4*latent_size, 8*latent_size),
             #nn.BatchNorm1d(8*latent_size),
             #nn.LeakyReLU(),
-            nn.Linear(8*latent_size, 512),
+            nn.Linear(8*latent_size, latent_size),
             #nn.BatchNorm1d(latent_size),
             #nn.LeakyReLU(),
             upper_softmax(),
