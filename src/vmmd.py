@@ -149,25 +149,26 @@ class VMMD:
         self.shape = shape = X[0].shape
         print(shape)
         self.__latent_size = latent_size = max(int(X.flatten(1, -1).shape[1]/16), 1) #X.flatten(1, -1).shape[1] 
-        ndims = X.shape[2]#*X.shape[2]
+        ndims = X.shape[2]*X.shape[3]
         train_size = X.shape[0]
         self.batch_size = min(self.batch_size, train_size)
         channel = X.shape[1]
 
         device = self.device
         print("get generator")
-        generator, _ = self.get_the_networks(
+        generator = self.get_the_networks(
             ndims, latent_size, device=device)
         
         print("get discriminator")
         print(X.flatten(1, -1).shape[1])
         print(ndims)
         print(channel)
-        detector = Detector(X.flatten(1, -1).shape[1], ndims, channel, Encoder, Decoder)
-        detector.to(device)
+        #detector = Detector(X.flatten(1, -1).shape[1], ndims, channel, Encoder, Decoder)
+        #detector.to(device)
         
-        detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
-        detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
+        #with torch.no_grad():
+        #    detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
+        #    detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
 
         #optimizer = torch.optim.Adadelta(
         #    generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -220,16 +221,17 @@ class VMMD:
                 # batch_loss = loss_function(batch, fake_subspaces*batch + (fake_subspaces == 1e-08)*torch.mean(batch,dim=0), alphas=[0.1]) #Upper_lower_softmax
                 # batch_loss = loss_function(batch, fake_subspaces*batch + torch.less(batch,1/batch.shape[1])*torch.mean(batch,dim=0), alphas=[0.1]) #Upper softmax
                 
-                batch_enc = detector.encoder(batch.unflatten(1, shape).to('cuda'))
+                #batch_enc = detector.encoder(batch.unflatten(1, shape).to('cuda'))
 
-                proj_batch = fake_subspaces[:, np.newaxis] * batch.unflatten(1, (shape[0], shape[1]*shape[1]))
+                proj_batch = fake_subspaces[:, np.newaxis] * batch.unflatten(1, (shape[0], shape[1]*shape[2]))
 
-                proj_batch_enc = detector.encoder(proj_batch.unflatten(2, shape[1:]).to('cuda'))
+                #proj_batch_enc = detector.encoder(proj_batch.unflatten(2, shape[1:]).to('cuda'))
 
                 batch_loss = loss_function(batch.flatten(1, -1).to('cuda'), proj_batch.flatten(1, -1).to('cuda') + torch.less(
                     batch, 1/batch.shape[1])*torch.mean(batch, dim=0), fake_subspaces)  # Constrained MMD Loss
                 self.bandwidth = loss_function.bandwidth
                 batch_loss.backward()
+                #torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=5)
                 optimizer.step()
                 generator_loss += float(batch_loss.to(
                     'cpu').detach().numpy())/batch_number
@@ -253,7 +255,7 @@ class VMMD:
             self.model_snapshot(path_to_directory, run_number, show=True)
 
         self.generator = generator
-        self.detector = detector
+        #self.detector = detector
 
     def generate_subspaces(self, nsubs):
         # Need to load in cpu as mps Tensor module doesn't properly fix the seed
@@ -262,7 +264,9 @@ class VMMD:
             torch.manual_seed(self.seed)
         noise_tensor.normal_()
         u = self.generator(noise_tensor.to(self.device))
+        print(u)
         u = torch.greater_equal(u, 1/u.shape[1])
+        print(u)
         return u
 
 

@@ -23,6 +23,26 @@ class RBF(nn.Module):
         return torch.exp(-L2_distances[None, ...] / (self.get_bandwidth(L2_distances) * self.bandwidth_multipliers)[:, None, None]).sum(dim=0)
 
 
+class RationalQuadratic(nn.Module):
+    def __init__(self, n_kernels=5, mul_factor=2.0, alpha=1.0, bandwidth=None):
+        super().__init__()
+        self.alpha = alpha
+        self.bandwidth_multipliers = mul_factor ** (
+            torch.arange(n_kernels) - n_kernels // 2).to('cuda')
+        self.bandwidth = bandwidth
+
+    def get_bandwidth(self, L2_distances):
+        n_samples = L2_distances.shape[0]
+        self.bandwidth = L2_distances.data.sum() / (n_samples ** 2 - n_samples)
+        return self.bandwidth
+
+    def forward(self, X):
+        L2_distances = torch.cdist(X, X) ** 2
+        bandwidth = self.get_bandwidth(L2_distances)
+        scaled_dist = L2_distances[None, ...] / (2 * self.alpha * bandwidth * self.bandwidth_multipliers)[:, None, None]
+        return (1 + scaled_dist).pow(-self.alpha).sum(dim=0)
+
+
 class MMDLossConstrained(nn.Module):
     '''
     Constrained loss by the number of features selected

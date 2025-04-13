@@ -1,9 +1,12 @@
 from datasets.mnist import load_mnist, load_fashion_mnist
 from datasets.cifar import load_cifar10, load_cifar100
+from datasets.caltech import load_caltech101, load_caltech256
 from datasets.stl import load_stl10
 #from algorithms.EDSC import edesc
 from sklearn import cluster
 from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
+import hdbscan
+from src.cluster.SNNDPC import SNNDPC
 from metrics import normalized_mutual_info_score, clustering_accuracy
 import pandas as pd
 from src.modules.tools import reduce_subspaces
@@ -19,17 +22,20 @@ from sklearn.ensemble import BaggingClassifier
 from src.modules.tools import pretrain_autoencoder
 from src.modules.network_module import Detector, Encoder, Decoder
 
-path = "results_vmmd_pretrainedAE/"
+path = "results_newC/"
 
 ALGORITHMS = {
-    "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
+    #"kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
+    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    #"Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5),
+    "HDBSCAN": hdbscan.HDBSCAN(n_jobs=-1),
+    "SNNDPC": SNNDPC(n_clusters=10, k=10)
 }
 
 DATASETS = {
-    #"MNIST": load_mnist,
+    #"CALTECH101": load_caltech101,
+    "MNIST": load_mnist,
     #"CIFAR10": load_cifar10,
     #"STL10": load_stl10,
     #"CIFAR100": load_cifar100,
@@ -63,6 +69,7 @@ def plot_subspaces(images, U, dataset, shape):
     num_images = 20
     rows, cols = 4, 5  # 4 rows, 5 columns
     
+    print(U.shape)
     U = torch.unflatten(U, 1, shape[1:])
 
     selected_images = []
@@ -168,8 +175,8 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 dataset_train, dataset_test = DATASETS[dataset]()
 
                 # Get indices where the label is 1 (Pants)
-                train_indices = [i for i, (_, label) in enumerate(dataset_train) if label == 1]
-                test_indices = [i for i, (_, label) in enumerate(dataset_test) if label == 1]
+                train_indices = [i for i, (_, label) in enumerate(dataset_train) if label == 17]
+                test_indices = [i for i, (_, label) in enumerate(dataset_test) if label == 17]
 
                 # Create filtered datasets
                 filtered_train = Subset(dataset_train, train_indices)
@@ -196,16 +203,11 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
                 #autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
 
-                # Call visualization function
-
                 #visualize_reconstruction(autoencoder, dataloader_train)
 
-                # Load the saved weights
-                
                 shape = X_train.shape
 
                 #------Preprosessing with VGAN-----#
-                #subspaces = vgan_training(vgan, X_train)
                 subspaces = vgan_training(vgan, X_train)
 
                 #np.random.seed(42)
@@ -215,15 +217,15 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
                 plot_subspaces(X_train, subspaces, dataset, shape[1:])
 
-                test = vgan.check_if_myopic(X_train, [vgan.bandwidth.cpu()], len(X_train))
-                test.to_csv(f'{path}ifmyopic{dataset}.csv')
+                #test = vgan.check_if_myopic(X_train, [vgan.bandwidth.cpu()], len(X_train))
+                #test.to_csv(f'{path}ifmyopic{dataset}.csv')
                 print(f'{path}ifmyopic{dataset}.csv')
 
                 plt.clf()
                 plt.figure(figsize=(20, 6))
                 plt.plot(vgan.train_history["generator_loss"])
                 plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
-                exit()
+                
                 #continue
                 #------End of Preprosessing with VGAN-----#
 
@@ -236,7 +238,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     if dataset == "CIFAR100":
                          algorithm.set_params(n_clusters=100)
 
-                    amount_cluster = algorithm.get_params()["n_clusters"]
+                    amount_cluster = 10#algorithm.get_params()["n_clusters"]
 
                     for subspace in subspaces:
                         
@@ -272,32 +274,25 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     X_new = np.array(X_new)
                     X_new = torch.as_tensor(X_new, device=torch.device('cpu'))
 
-                    #result, bandwith = vgan.check_if_myopic(X_train, [vgan.bandwidth.cpu()], len(X_train))
+                    result, bandwith = vgan.check_if_myopic(X_train, [vgan.bandwidth.cpu()], len(X_train))
                     #df.to_csv(f'FB_{name}{dataset}check_if_myopic.csv')
 
-                    #bandwiths.append(bandwith)
-                    #results.append(result)
+                    bandwiths.append(bandwith)
+                    results.append(result)
                     datasets_ensemble.append(dataset)
                     names_ensemble.append(name)
                     total_times_ensemble.append(total_time)
                     acc_ensemble.append(acc)
                     nmi_ensemble.append(nmi)
 
-                    plt.clf()
-                    plt.figure(figsize=(20, 6))
-                    plt.plot(vgan.train_history["generator_loss"])
-                    plt.show()
-                    plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
-                    plt.clf()
-        
         df = pd.DataFrame({
             "DATABASE": datasets_ensemble,
             "ALGORITHM": names_ensemble,
             "TIME TAKEN": total_times_ensemble,
             "NMI": nmi_ensemble,
             "ACC": acc_ensemble,
-            #"PValue": results,
-            #"bandwidth": bandwiths
+            "PValue": results,
+            "bandwidth": bandwiths
         })
 
         #df.to_csv(f'FB_Ensemble_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
@@ -322,12 +317,12 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
 if __name__ == "__main__":
 
-    sample_size = 2000
-    batch_size = 1000
-    lr_G = 0.01
-    lr_D = 0.01
+    sample_size = 10000
+    batch_size = 5000
+    lr_G = 0.001
+    lr_D = 0.001
 
     torch.manual_seed(42)
     np.random.seed(42)
 
-    run_experiment(sample_size, batch_size, lr_G, lr_D, 3000)
+    run_experiment(sample_size, batch_size, lr_G, lr_D, 1500)
