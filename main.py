@@ -22,23 +22,25 @@ from sklearn.ensemble import BaggingClassifier
 from src.modules.tools import pretrain_autoencoder
 from src.modules.network_module import Detector, Encoder, Decoder
 
-path = "results_newC/"
+path = "results_opt/"
 
 ALGORITHMS = {
+    "SNNDPC": SNNDPC(n_clusters=10, k=10), #Shared-Nearest-Neighbor-Based Clustering by Fast Search and Find of Density Peaks
+    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5),
     #"kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    #"Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5),
-    "HDBSCAN": hdbscan.HDBSCAN(n_jobs=-1),
-    "SNNDPC": SNNDPC(n_clusters=10, k=10)
+    #"HDBSCAN": hdbscan.HDBSCAN(),
+    #"OPTICS": cluster.OPTICS(n_jobs=-1),
+    #"AP": cluster.AffinityPropagation(),
 }
 
 DATASETS = {
-    #"CALTECH101": load_caltech101,
+    "CALTECH101": load_caltech101,
     "MNIST": load_mnist,
-    #"CIFAR10": load_cifar10,
-    #"STL10": load_stl10,
-    #"CIFAR100": load_cifar100,
+    "CIFAR10": load_cifar10,
+    "STL10": load_stl10,
+    "CIFAR100": load_cifar100,
     "FASHION_MNIST": load_fashion_mnist,
 }
 
@@ -64,7 +66,7 @@ def visualize_reconstruction(autoencoder, data_loader, device='cuda'):
     plt.suptitle("Original vs Reconstructed Images")
     plt.savefig('decoded.png')
 
-def plot_subspaces(images, U, dataset, shape):
+def plot_subspaces(images, U, dataset, shape): #TODO Use UMAP ???
     # Select 20 sample images
     num_images = 20
     rows, cols = 4, 5  # 4 rows, 5 columns
@@ -144,6 +146,60 @@ def vgan_training(vgan, X_train):
     subspaces = [x[0] for x in subspaces]
 
     return torch.tensor(subspaces).cpu()
+
+def full_space_experiment(sample_size: int):
+    datasets = []
+    total_times = []
+    nmis = []
+    accuracys = []    # 5 datasets
+    names = []    
+
+    for i, dataset in enumerate(DATASETS):
+
+        print(f"CURRENTLY WORKING FOR {dataset}")
+
+        dataset_train, dataset_test = DATASETS[dataset]()
+        dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
+        X_train, y_train = next(iter(dataloader_train))
+
+        for name in ALGORITHMS:
+
+            print(f"CURRENTLY WORKING: {name}")
+                        
+            starting_time = time.time()
+            
+            algorithm = ALGORITHMS[name]
+
+            #if dataset == "CIFAR100" and name != "HDBSCAN":
+            #    algorithm.set_params(n_clusters=100)
+            #elif dataset == "CALTECH101" and name != "HDBSCAN":
+            #    algorithm.set_params(n_clusters=101)
+
+            X_train = torch.flatten(X_train, 1, -1)
+
+            y_pred = algorithm.fit_predict(X_train)
+
+            nmi = normalized_mutual_info_score(y_train, y_pred)
+            acc = clustering_accuracy(y_train, y_pred)
+            
+            end_time = time.time()
+            total_time = end_time - starting_time
+            
+            datasets.append(dataset)
+            names.append(name)
+            total_times.append(total_time)
+            nmis.append(nmi)
+            accuracys.append(acc)
+
+    df = pd.DataFrame({
+            "DATABASE": datasets,
+            "ALGORITHM": names,
+            "TIME TAKEN": total_times,
+            "NMI": nmis,
+            "ACC": accuracys
+    })
+
+    df.to_csv(f'results_FullSpace/all.csv')
 
 
 def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
@@ -225,7 +281,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 plt.figure(figsize=(20, 6))
                 plt.plot(vgan.train_history["generator_loss"])
                 plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
-                
+                exit()
                 #continue
                 #------End of Preprosessing with VGAN-----#
 
@@ -236,9 +292,15 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     algorithm = ALGORITHMS[name]
 
                     if dataset == "CIFAR100":
-                         algorithm.set_params(n_clusters=100)
-
-                    amount_cluster = 10#algorithm.get_params()["n_clusters"]
+                        if name != "HDBSCAN":
+                            algorithm.set_params(n_clusters=100)
+                        amount_cluster = 100
+                    elif dataset == "CALTECH101":
+                        if name != "HDBSCAN":
+                            algorithm.set_params(n_clusters=101)
+                        amount_cluster = 101
+                    else:
+                        amount_cluster = 10
 
                     for subspace in subspaces:
                         
@@ -296,7 +358,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
         })
 
         #df.to_csv(f'FB_Ensemble_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
-        df.to_csv(f'{path}PRETRAIN_AE_WITHCONV_ReducedSS_{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
+        df.to_csv(f'{path}ReducedSS_{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
         #final_cluster = generate_clustering_ensemble(clusterings, amount_cluster)
 
@@ -313,9 +375,12 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
         print(f"CURRENTLY WORKING FOR {dataset}")
 
-        df.to_csv(f'{path}ALLACC_PRETRAIN_AE_WITHCONV_ReducedSS_epoch{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
+        df.to_csv(f'{path}ALLACC_ReducedSS_epoch{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
 if __name__ == "__main__":
+
+    full_space_experiment(30000)
+    exit()
 
     sample_size = 10000
     batch_size = 5000

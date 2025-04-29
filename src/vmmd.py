@@ -172,7 +172,7 @@ class VMMD:
 
         #optimizer = torch.optim.Adadelta(
         #    generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr, betas=(0.9, 0.999))
+        optimizer = torch.optim.Adagrad(generator.parameters(), lr=self.lr)#, betas=(0.9, 0.999))
         scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=100, threshold=1e-3, threshold_mode='rel', eps=1e-50, verbose=True)
         self.generator_optimizer = optimizer.__class__.__name__
         # loss_function =  tts.MMDStatistic(self.batch_size, self.batch_size)
