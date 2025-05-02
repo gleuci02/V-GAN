@@ -4,6 +4,7 @@ from sklearn.preprocessing import StandardScaler
 
 def load_cifar10():
     transform = transforms.Compose([
+        #transforms.Grayscale(num_output_channels=1),  # Convert from RGB to grayscale
         transforms.ToTensor(),  # Convert to PyTorch tensor with shape [1, 28, 28]
         #transforms.Lambda(lambda x: x.view(-1))  # Flatten to shape [784]
     ])

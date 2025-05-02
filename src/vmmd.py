@@ -1,10 +1,13 @@
 import torch
 from collections import defaultdict
 from .models.Generator import Generator, Generator_big
+#from .modules.network_module import Detector, Encoder, Decoder
+from .models.Detector import Detector, Encoder, Decoder
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
@@ -34,6 +37,8 @@ class VMMD:
         self.weight_decay = weight_decay
         self.path_to_directory = path_to_directory
         self.generator_optimizer = None
+        self.dataset = "MNIST"
+        self.shape = (1, 32, 32)
         self.device = torch.device('cuda:0' if torch.cuda.is_available(
         ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
 
@@ -92,7 +97,7 @@ class VMMD:
                 path_to_directory / 'params.csv')
         self.__plot_loss(path_to_directory, show)
 
-    def load_models(self, path_to_generator, ndims, device: str = None):
+    def load_models(self, path_to_generator, ndims, latent_size, device: str = None):
         '''Loads models for prediction
 
         In case that the generator has already been trained, this method allows to load it (and optionally the discriminator) for generating subspaces
@@ -103,12 +108,12 @@ class VMMD:
         if device == None:
             device = self.device
         self.generator = Generator_big(
-            img_size=ndims, latent_size=max(int(ndims/16), 1)).to(device)
+            img_size=ndims, latent_size=latent_size)
         self.generator.load_state_dict(torch.load(
             path_to_generator, map_location=device))
         self.generator.eval()  # This only works for dropout layers
         self.generator_optimizer = f'Loaded Model from {path_to_generator} with {ndims} dimensions in the latent space'
-        self.__latent_size = max(int(ndims/16), 1)
+        self.__latent_size = latent_size
 
     def get_the_networks(self, ndims: int, latent_size: int, device: str = None) -> Generator_big:
         """Object function to obtain the networks' architecture
@@ -133,6 +138,8 @@ class VMMD:
         mps = torch.backends.mps.is_available()
 
         torch.manual_seed(self.seed)
+        torch.manual_seed(42)
+        np.random.seed(42)
         if cuda:
             torch.cuda.manual_seed(self.seed)
         elif mps:
@@ -140,16 +147,34 @@ class VMMD:
 
         # MODEL INTIALIZATION#
         epochs = self.epochs
-        self.__latent_size = latent_size = max(int(X.shape[1]/16), 1)
-        ndims = X.shape[1]
+        self.shape = shape = X[0].shape
+        print(shape)
+        self.__latent_size = latent_size = max(int(X.flatten(1, -1).shape[1]/16), 1) #X.flatten(1, -1).shape[1] 
+        ndims = X.shape[2]*X.shape[3]
         train_size = X.shape[0]
         self.batch_size = min(self.batch_size, train_size)
+        channel = X.shape[1]
 
         device = self.device
+        print("get generator")
         generator = self.get_the_networks(
             ndims, latent_size, device=device)
+        
+        print("get discriminator")
+        print(X.flatten(1, -1).shape[1])
+        print(ndims)
+        print(channel)
+        detector = Detector(X.flatten(1, -1).shape[1], ndims, Encoder, Decoder)
+        detector.to(device)
+        
+        with torch.no_grad():
+            detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
+            detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
+
         optimizer = torch.optim.Adadelta(
             generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        #optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr, betas=(0.9, 0.999), weight_decay=0.4)
+        #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=100, threshold=1e-3, threshold_mode='rel', eps=1e-50, verbose=True)
         self.generator_optimizer = optimizer.__class__.__name__
         # loss_function =  tts.MMDStatistic(self.batch_size, self.batch_size)
         loss_function = MMDLossConstrained(weight=10)
@@ -189,19 +214,28 @@ class VMMD:
 
                 # SAMPLE NOISE#
                 noise_tensor.normal_()
-
+                
                 # OPTIMIZATION STEP#
                 optimizer.zero_grad()
+
+                noise_tensor = detector.encoder(noise_tensor)
                 fake_subspaces = generator(noise_tensor)
-                # batch_loss = loss_function(batch, fake_subspaces*batch + (fake_subspaces == 1e-08)*torch.mean(batch,dim=0), alphas=[0.1]) #Upper_lower_softmax
-                # batch_loss = loss_function(batch, fake_subspaces*batch + torch.less(batch,1/batch.shape[1])*torch.mean(batch,dim=0), alphas=[0.1]) #Upper softmax
-                batch_loss = loss_function(batch, fake_subspaces*batch + torch.less(
-                    batch, 1/batch.shape[1])*torch.mean(batch, dim=0), fake_subspaces)  # Constrained MMD Loss
+
+
+                proj_batch = fake_subspaces[:, np.newaxis] * batch.unflatten(1, (shape[0], shape[1]*shape[2])) #[:, np.newaxis]
+
+
+                batch_loss = loss_function(batch.flatten(1, -1).to('cuda'), proj_batch.flatten(1, -1).to('cuda') + torch.less(
+                    batch, 1/batch.shape[1])*torch.mean(batch, dim=0), fake_subspaces.flatten(1, -1))  # Constrained MMD Loss
                 self.bandwidth = loss_function.bandwidth
                 batch_loss.backward()
+                #torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=5)
                 optimizer.step()
-                generator_loss += float(batch_loss.to(
-                    'cpu').detach().numpy())/batch_number
+                generator_loss += float(batch_loss.to('cpu').detach().numpy())/batch_number
+            #scheduler.step(generator_loss)
+            for param_group in optimizer.param_groups:
+                print(f"Epoch {epoch+1}, Learning Rate: {param_group['lr']}")
+
 
             print(f"Average loss in the epoch: {generator_loss}")
             self.train_history["generator_loss"].append(generator_loss)
@@ -218,15 +252,19 @@ class VMMD:
             self.model_snapshot(path_to_directory, run_number, show=True)
 
         self.generator = generator
+        #self.detector = detector
 
     def generate_subspaces(self, nsubs):
         # Need to load in cpu as mps Tensor module doesn't properly fix the seed
-        noise_tensor = torch.Tensor(nsubs, self.__latent_size).to('cpu')
+        noise_tensor = torch.Tensor(nsubs, self.__latent_size).to('cuda')
         if not self.seed == None:
             torch.manual_seed(self.seed)
         noise_tensor.normal_()
         u = self.generator(noise_tensor.to(self.device))
-        u = torch.greater_equal(u, 1/u.shape[1])
+        print(u)
+        u = torch.greater_equal(u, 1/u.shape[1]) #TODO
+        print(u)
+        print("Gehe ich hier überhaupt rein i dont fuking know man")
         return u
 
 

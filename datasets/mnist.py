@@ -10,7 +10,7 @@ from torchvision import datasets, transforms
 
 def load_mnist():
     transform = transforms.Compose([
-        #transforms.Resize((32, 32)),
+        transforms.Resize((32, 32)),
         transforms.ToTensor(),  # Convert to PyTorch tensor with shape [1, 28, 28]
         #transforms.Lambda(lambda x: x.view(-1))  # Flatten to shape [784]
     ])

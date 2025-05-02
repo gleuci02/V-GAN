@@ -1,6 +1,7 @@
 from datasets.mnist import load_mnist, load_fashion_mnist
 from datasets.cifar import load_cifar10, load_cifar100
 from datasets.stl import load_stl10
+from datasets.caltech import load_caltech101
 #from algorithms.EDSC import edesc
 from sklearn import cluster
 #from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
@@ -9,7 +10,7 @@ import pandas as pd
 from src.modules.tools import reduce_subspaces
 from pathlib import Path
 from torch.utils.data import DataLoader, Subset
-from src.modules.od_module import VGAN
+from src.modules.od_module import VGAN, VMMD
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -17,7 +18,7 @@ import datetime
 import time
 from sklearn.ensemble import BaggingClassifier
 
-path = "results_VGAN/"
+path = "results/results_Caltech/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
@@ -27,38 +28,37 @@ ALGORITHMS = {
 }
 
 DATASETS = {
+    #"CALTECH101": load_caltech101,
     #"STL10": load_stl10,
-    "CIFAR100": load_cifar100,
-    #"MNIST": load_mnist,
+    #"CIFAR100": load_cifar100,
+    "MNIST": load_mnist,
     #"FASHION_MNIST": load_fashion_mnist,
     #"CIFAR10": load_cifar10
 }
 
-def plot_subspaces(images, U, dataset, shape):
+def plot_subspaces(images, U, dataset, shape): #TODO Use UMAP ???
     # Select 20 sample images
     num_images = 20
     rows, cols = 4, 5  # 4 rows, 5 columns
     
-    #images = torch.flatten(images, 1, -1)
-    #U = torch.unflatten(U, 1, shape)
+    U = torch.unflatten(U, 1, shape[1:])
 
+    selected_images = []
     for i in range(num_images):
         col_idx = i % cols
         if col_idx < len(U):
             images[i] = images[i] * U[col_idx]
-        #else:
-        #    images[i] = images[i] * U[-1]
+            #selected_images.append(images[i][:, U[col_idx]])
     
+    #selected_images = torch.stack(selected_images)
+
     # Reshape images for plotting
-    images = torch.unflatten(images, 1, shape)
+    #selected_images = selected_images.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
     images = images.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
     
     # Create subplots
     fig, axes = plt.subplots(rows + 1, cols, figsize=(10, 10))
     
-    U = torch.unflatten(U, 1, shape)
-    U = U.permute(0, 2, 3, 1).cpu().numpy().astype("float32")
-
     # Plot U on the top row
     for j in range(cols):
         if j < len(U):
@@ -74,6 +74,7 @@ def plot_subspaces(images, U, dataset, shape):
     
     plt.tight_layout()
     plt.savefig(f"{path}{dataset}.png")
+    print(f"{path}{dataset}.png")
 
 def generate_clustering_ensemble(clusterings, amount_cluster):
     n_samples = clusterings.shape[1]
@@ -101,9 +102,15 @@ def vgan_training(vgan, X_train):
 
     subspaces = vgan.subspaces
 
+    print(subspaces.shape)
+
+    subspaces = subspaces.reshape(subspaces.shape[0], -1)
+
     proba = vgan.proba
 
     subspaces, proba = reduce_subspaces(subspaces, proba)
+
+    print(len(subspaces))
 
     tup = zip(subspaces, proba)
 
@@ -132,8 +139,6 @@ def feature_bagging_experiment(batch_size):
 
     for i, dataset in enumerate(DATASETS):
         dataset_train, dataset_test = DATASETS[dataset]()
-
-
 
         dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=False)
         dataloader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False)
@@ -191,32 +196,39 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
         # Load dataset
         for i, dataset in enumerate(DATASETS):
-                vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
-                
+                vgan = VMMD(epochs=epoch, path_to_directory=Path() / "experiments" /f"Example_normal_{datetime.datetime.now()}_vmmd", lr=lr_G)
+                    
                 print(f"CURRENTLY WORKING FOR {dataset}")
 
                 dataset_train, dataset_test = DATASETS[dataset]()
 
-                # Get indices where the label is 1 (Pants)
-                train_indices = [i for i, (_, label) in enumerate(dataset_train) if label == 1]
+                train_indices = [i for i, (_, label) in enumerate(dataset_train) if label == 1] #17
                 test_indices = [i for i, (_, label) in enumerate(dataset_test) if label == 1]
 
                 # Create filtered datasets
                 filtered_train = Subset(dataset_train, train_indices)
                 filtered_test = Subset(dataset_test, test_indices)
 
-                dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
+                dataloader_train = DataLoader(filtered_train, batch_size=sample_size, shuffle=False)
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
 
                 X_train, y_train = next(iter(dataloader_train))
                 shape = X_train.shape
-                X_train = torch.flatten(X_train, 1, -1)
+                #X_train = torch.flatten(X_train, 1, -1)
                 #X_test, y_test = next(iter(dataloader_test))
 
                 #------Preprosessing with VGAN-----#
                 subspaces = vgan_training(vgan, X_train)
 
                 plot_subspaces(X_train, subspaces, dataset, (shape[1], shape[2], shape[3]))
+
+                plt.clf()
+                plt.figure(figsize=(20, 6))
+                plt.plot(vgan.train_history["generator_loss"])
+                plt.show()
+                plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
+                plt.clf()
+
                 exit()
                 #------End of Preprosessing with VGAN-----#
 
@@ -274,20 +286,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     acc_ensemble.append(acc)
                     nmi_ensemble.append(nmi)
 
-                    plt.clf()
-                    plt.figure(figsize=(20, 6))
-                    plt.plot(vgan.train_history["generator_loss"])
-                    plt.show()
-                    plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
-
-                    plt.clf()
-                    fig = plt.figure()
-                    ax = fig.add_axes([0,0,1,1])
-                    ax.plot(vgan.train_history["detector_loss"])
-                    plt.figure(figsize=(20, 2))
-                    fig.savefig(f'{path}VGAN_DLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300, bbox_inches='tight')
-                    plt.show()
-                    plt.clf()
+                    
 
         df = pd.DataFrame({
             "DATABASE": datasets_ensemble,
@@ -319,9 +318,9 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
 if __name__ == "__main__":
 
-    sample_size = 2000
-    batch_size = 1000
-    lr_G = 0.01
+    sample_size = 4000
+    batch_size = 2000
+    lr_G = 0.007
     lr_D = 0.01
 
-    run_experiment(sample_size, batch_size, lr_G, lr_D, 1500)
+    run_experiment(sample_size, batch_size, lr_G, lr_D, 1200)

@@ -89,58 +89,100 @@ class LinearBlock(torch.nn.Module):
             x1 = torch.cat([x, x1], axis=1)
 
         return x1
-
-class Encoder(torch.nn.Module):
-    def __init__(self, latent_size, img_size):
-
-        super(Encoder, self).__init__()
-        assert img_size % 16 == 0, "isize has to be a multiple of 16"
-        
-        # input is nc x isize x isize
-        main = nn.Sequential()
-
-        main.add_module('Initial layer', nn.Linear(img_size, 64))
-        csize, cndf = img_size / 2, 64
-
-        while csize > 4:
-            in_feat = cndf
-            out_feat = cndf * 2
-            main.add_module('pyramid_{0}-{1}_linear'.format(in_feat, out_feat), nn.Linear(in_feat, out_feat))
-            cndf = cndf * 2
-            csize = csize / 2
-
-        main.add_module('final_{0}-{1}_conv'.format(in_feat, out_feat), nn.Linear(cndf, latent_size))
-        self.main = main
-
-    def forward(self, input):
-        output = self.main(input)
-        return output
     
 
-class Decoder(torch.nn.Module):
-    def __init__(self, latent_size, img_size):
+    
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-        super(Decoder, self).__init__()
-        assert img_size % 16 == 0, "img_size has to be a multiple of 16"
+# Optional: Custom Gaussian noise layer
+class GaussianNoise(nn.Module):
+    def __init__(self, std=0.1):
+        super().__init__()
+        self.std = std
 
-        cngf, tisize = 64 // 2, 4
-        while tisize != img_size:
-            cngf = cngf * 2
-            tisize = tisize * 2
+    def forward(self, x):
+        if self.training:
+            noise = torch.randn_like(x) * self.std
+            return x + noise
+        return x
 
-        main = nn.Sequential()
-        main.add_module('initial_{0}_linear'.format(cngf), nn.Linear(latent_size, cngf))
+class BatchDiscrimination(nn.Module):
+    def __init__(self, in_features, B, C):
+        """
+        in_features: length of f(x) (A)
+        B, C: dimensions of the learned tensor T (A × B × C)
+        """
+        super().__init__()
+        # T will be of shape (A, B, C)
+        self.T = nn.Parameter(torch.randn(in_features, B, C))
 
-        csize = 4
-        while csize < img_size // 2:
-            main.add_module('pyramid_{0}-{1}_linear'.format(cngf, cngf // 2), nn.Linear(cngf, cngf // 2))
-            cngf = cngf // 2
-            csize = csize * 2
+    def forward(self, f):
+        # f: (N, A)  batch of feature vectors
+        N, A = f.shape
+        # 1) Project: (N, A) × (A, B, C) → (N, B, C)
 
-        main.add_module('final_{0}-{1}_convt'.format(cngf, 1), nn.Linear(cngf, 1))
+        M = f @ self.T.view(A, -1)           # (N, 1, A) @ (A, B*C) → (N, 1, B*C)
+        M = M.view(N, -1, self.T.size(2))                 # → (N, B, C)
 
-        self.main = main
+        # 2) Compute pairwise L1 distances along B:
+        #    We want a tensor of shape (N, C, N) containing distances M[i,:,c] vs M[j,:,c].
+        M_i = M.unsqueeze(3)            # (N, B, C, 1)
+        M_j = M.permute(1,2,0).unsqueeze(0)  # (1, B, C, N)
+        abs_diff = torch.abs(M_i - M_j)  # (N, B, C, N)
+        o = abs_diff.sum(dim=1)          # sum over B → (N, C, N)
 
-    def forward(self, input):
-        output = self.main(input)
-        return output
+        # 3) Similarity and sum over other examples:
+        #    Exclude j=i if you like; here we include self for simplicity.
+        d = torch.exp(-o).sum(dim=2)     # (N, C)
+
+        return d
+
+# Main V-GAN Head Network
+class VGANHead(nn.Module):
+    def __init__(self, latent_size=1024, img_size=10):
+        super().__init__()
+
+        self.main = nn.Sequential(
+            nn.Linear(latent_size, 2*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(2*latent_size),
+            nn.LeakyReLU(0.2),
+
+            nn.Linear(2*latent_size, 4*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(4*latent_size),
+            nn.LeakyReLU(0.2),
+
+            nn.Linear(4*latent_size, 8*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(8*latent_size),
+            nn.LeakyReLU(0.2),
+
+            nn.Linear(8*latent_size, 16*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(16*latent_size),
+            nn.LeakyReLU(0.2),
+
+            nn.Linear(16*latent_size, 16*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(16*latent_size),
+            nn.LeakyReLU(0.2),
+        )
+
+        self.discr = BatchDiscrimination(16*latent_size, 50, 10)
+
+        self.last_lin = nn.Linear(16*latent_size + 10, img_size)
+    
+        self.act = upper_softmax()
+        
+        
+    def forward(self, x):
+
+        x = self.main(x)
+        batch_feats = self.discr(x)  # → (N, C)
+        combined = torch.cat([x, batch_feats], dim=1)
+        x = self.last_lin(combined)
+
+        return self.act(x)

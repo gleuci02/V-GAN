@@ -9,8 +9,10 @@ class upper_softmax(nn.Module):
 
     def forward(self, x):
         x = torch.nn.functional.softmax(x, 1)
+        
         x = torch.less(x, 1/x.shape[1])*x + \
             torch.greater_equal(x, 1/x.shape[1])
+        
         return x
 
 
@@ -40,25 +42,27 @@ class Generator(nn.Module):
         return self.main(input)
 
 
-class Generator_big(nn.Module):
+class Generator_big(nn.Module): # DCGANGenerator
     def __init__(self, latent_size, img_size):
         super(Generator_big, self).__init__()
         self.main = nn.Sequential(
             nn.Linear(latent_size, 2*latent_size),
             #nn.BatchNorm1d(2*latent_size),
-            #nn.LeakyReLU(),
+            #nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(2*latent_size, 4*latent_size),
             #nn.BatchNorm1d(4*latent_size),
-            #nn.LeakyReLU(),
+            #nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(4*latent_size, 8*latent_size),
-            #nn.BatchNorm1d(8*latent_size),
-            #nn.LeakyReLU(),
-            nn.Linear(8*latent_size, img_size),
             #nn.BatchNorm1d(img_size),
-            #nn.LeakyReLU(),
+            #nn.LeakyReLU(0.2, inplace=True),
+            #nn.Sigmoid(),
+            nn.Linear(8*latent_size, img_size),
+
             upper_softmax(),
             #Softmax()
         )
 
     def forward(self, input):
         return self.main(input)
+    
+
