@@ -2,7 +2,7 @@ import torch
 from collections import defaultdict
 from .models.Generator import Generator_big
 #from .models.Detector import Detector#, Encoder, Decoder
-from .modules.network_module import Detector, Encoder, Decoder#, Generator_big
+#from .modules.network_module import Detector, Encoder, Decoder#, Generator_big
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained

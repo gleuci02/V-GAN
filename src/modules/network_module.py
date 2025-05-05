@@ -1,7 +1,7 @@
 from pyod.utils.torch_utility import get_activation_by_name
 import torch
 from torch import nn
-from ..models.Generator import upper_softmax
+from ..models.Generator import upper_softmax, upper_lower_softmax
 import numpy as np
 
 """Module to add addtional networks for VGAN
@@ -227,3 +227,93 @@ class Generator_big(nn.Module):
         res = res.view(input.size(0), -1)
         return res
 
+class GaussianNoise(nn.Module):
+    def __init__(self, std=0.1):
+        super().__init__()
+        self.std = std
+
+    def forward(self, x):
+        if self.training:
+            noise = torch.randn_like(x) * self.std
+            return x + noise
+        return x
+
+class BatchDiscrimination(nn.Module):
+    def __init__(self, in_features, B, C):
+        """
+        in_features: length of f(x) (A)
+        B, C: dimensions of the learned tensor T (A × B × C)
+        """
+        super().__init__()
+        # T will be of shape (A, B, C)
+        self.T = nn.Parameter(torch.randn(in_features, B, C))
+
+    def forward(self, f):
+        # f: (N, A)  batch of feature vectors
+        N, A = f.shape
+        # 1) Project: (N, A) × (A, B, C) → (N, B, C)
+
+        M = f @ self.T.view(A, -1)           # (N, 1, A) @ (A, B*C) → (N, 1, B*C)
+        M = M.view(N, -1, self.T.size(2))                 # → (N, B, C)
+
+        # 2) Compute pairwise L1 distances along B:
+        #    We want a tensor of shape (N, C, N) containing distances M[i,:,c] vs M[j,:,c].
+        M_i = M.unsqueeze(3)            # (N, B, C, 1)
+        M_j = M.permute(1,2,0).unsqueeze(0)  # (1, B, C, N)
+        abs_diff = torch.abs(M_i - M_j)  # (N, B, C, N)
+        o = abs_diff.sum(dim=1)          # sum over B → (N, C, N)
+
+        # 3) Similarity and sum over other examples:
+        #    Exclude j=i if you like; here we include self for simplicity.
+        d = torch.exp(-o).sum(dim=2)     # (N, C)
+
+        return d
+
+# Main V-GAN Head Network
+class VGANHead(nn.Module):
+    def __init__(self, latent_size=1024, img_size=1024):
+        super().__init__()
+        print("Hi I am VGANHead")
+        self.main = nn.Sequential(
+            nn.Linear(latent_size, 2*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(2*latent_size),
+            nn.LeakyReLU(0.2),
+
+            nn.Linear(2*latent_size, 4*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(4*latent_size),
+            nn.LeakyReLU(0.2),
+
+            nn.Linear(4*latent_size, 6*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(6*latent_size),
+            nn.LeakyReLU(0.2),
+
+            nn.Linear(6*latent_size, 8*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(8*latent_size),
+            nn.LeakyReLU(0.2),
+
+            nn.Linear(8*latent_size, 10*latent_size),
+            GaussianNoise(std=0.1),
+            nn.BatchNorm1d(10*latent_size),
+            nn.LeakyReLU(0.2),
+        )
+
+        
+        self.discr = BatchDiscrimination(10*latent_size, 50, 10)
+
+        self.last_lin = nn.Linear(10*latent_size + 10, img_size) # + 10
+    
+        self.act = nn.Tanh()
+        
+        
+    def forward(self, x):
+
+        x = self.main(x)
+        batch_feats = self.discr(x)  # → (N, C)
+        combined = torch.cat([x, batch_feats], dim=1)
+        res = self.last_lin(combined)
+
+        return self.act(res)

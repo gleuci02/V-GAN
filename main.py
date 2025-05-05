@@ -1,6 +1,7 @@
 from datasets.mnist import load_mnist, load_fashion_mnist
 from datasets.cifar import load_cifar10, load_cifar100
 from datasets.stl import load_stl10
+from datasets.caltech import load_caltech101
 #from algorithms.EDSC import edesc
 from sklearn import cluster
 from src.cluster.selfrepresentation import ElasticNetSubspaceClustering, SparseSubspaceClusteringOMP
@@ -18,9 +19,8 @@ import time
 from sklearn.ensemble import BaggingClassifier
 from src.modules.tools import pretrain_autoencoder, train_vae
 from src.modules.network_module import Detector, Encoder, Decoder
-from src.modules.vanilla_vae import VanillaVAE
 
-path = "results_latentSpace/"
+path = "results/results_latentSpace/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
@@ -30,10 +30,11 @@ ALGORITHMS = {
 }
 
 DATASETS = {
+    #"CALTECH101": load_caltech101,
     #"MNIST": load_mnist,
-    "CIFAR10": load_cifar10,
-    "STL10": load_stl10,
-    "CIFAR100": load_cifar100,
+    #"CIFAR10": load_cifar10,
+    #"STL10": load_stl10,
+    #"CIFAR100": load_cifar100,
     "FASHION_MNIST": load_fashion_mnist,
 }
 
@@ -42,10 +43,10 @@ def visualize_reconstruction(autoencoder, data_loader, device='cuda'):
     
     batch = next(iter(data_loader))[0].to(device)  # Get a batch
     with torch.no_grad():
-        recon, _, _, _ = autoencoder(batch)
+        _, recon = autoencoder(batch)
 
     print(recon.shape)
-    #recon = torch.unflatten(recon, 1, batch[0].shape)
+    recon = torch.unflatten(recon, 1, batch[0].shape)
 
     batch = batch.cpu().permute(0, 2, 3, 1).numpy()  # Convert to (H, W, C)
     recon = recon.cpu().permute(0, 2, 3, 1).numpy()
@@ -65,7 +66,7 @@ def plot_subspaces(vgan, images, U, dataset, shape):
     num_images = 20
     rows, cols = 4, 5  # 4 rows, 5 columns
     
-    #U = torch.unflatten(U, 1, shape[1:])
+    U = torch.unflatten(U, 1, shape[1:])
 
     enc = vgan.detector.encoder
     dec = vgan.detector.decoder
@@ -73,8 +74,8 @@ def plot_subspaces(vgan, images, U, dataset, shape):
     for i in range(num_images):
         col_idx = i % cols
         if col_idx < len(U):
-            proj_enc = enc(images.to('cuda')) * U[col_idx].to('cuda')
-            images[i] = dec(proj_enc)[i]
+            proj_enc = images.to('cuda') * U[col_idx].to('cuda')
+            images[i] = proj_enc[i]
 
     # Reshape images for plotting
     images = images.permute(0, 2, 3, 1).cpu().detach().numpy().astype("float32")
@@ -82,7 +83,7 @@ def plot_subspaces(vgan, images, U, dataset, shape):
     # Create subplots
     fig, axes = plt.subplots(rows + 1, cols, figsize=(10, 10))
     
-    U = dec(U.float().to('cuda')).permute(0, 2, 3, 1).cpu().detach().numpy()
+    #U = dec(U.float().to('cuda')).permute(0, 2, 3, 1).cpu().detach().numpy()
 
     # Plot U on the top row
     for j in range(cols):
@@ -171,14 +172,14 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 dataset_train, dataset_test = DATASETS[dataset]()
 
                 # Get indices where the label is 1 (Pants)
-                train_indices = [i for i, (_, label) in enumerate(dataset_train) if label == 1]
+                train_indices = [i for i, (_, label) in enumerate(dataset_train) if label == 1] #17
                 test_indices = [i for i, (_, label) in enumerate(dataset_test) if label == 1]
 
                 # Create filtered datasets
                 filtered_train = Subset(dataset_train, train_indices)
                 filtered_test = Subset(dataset_test, test_indices)
 
-                dataloader_train = DataLoader(dataset_train, batch_size=sample_size, shuffle=False)
+                dataloader_train = DataLoader(filtered_train, batch_size=sample_size, shuffle=False)
 
                 #dataloader_test = DataLoader(dataset_test, batch_size=int(sample_size / 10), shuffle=False)
 
@@ -190,13 +191,11 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 channel = X_train.shape[1]
 
                 #autoencoder = Detector(latent_size, ndims, channel, Encoder, Decoder)
-                #autoencoder = VanillaVAE(channel, latent_size)
                 #autoencoder.to('cuda')
-                #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=150, lr=0.002)
-                #autoencoder = train_vae(autoencoder, dataloader_train, lr=0.005, num_epochs=100)
+                #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=50, lr=0.002)
 
-                #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_vae_{dataset}.pth")
-                #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_vae_{dataset}.pth")
+                #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_{dataset}.pth")
+                #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_{dataset}.pth")
                 
                 #autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
                 #autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
@@ -217,9 +216,9 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 #feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
 
                 plot_subspaces(vgan, X_train, subspaces, dataset, shape[1:])
-                test = vgan.check_if_myopic(X_train.detach().numpy(), [vgan.bandwidth.cpu()], len(X_train))
-                test.to_csv(f'{path}ifmyopic{dataset}.csv')
-                print(f'{path}ifmyopic{dataset}.csv')
+                #test = vgan.check_if_myopic(X_train.detach().numpy(), [vgan.bandwidth.cpu()], len(X_train))
+                #test.to_csv(f'{path}ifmyopic{dataset}.csv')
+                #print(f'{path}ifmyopic{dataset}.csv')
 
 
                 plt.clf()
@@ -327,10 +326,10 @@ if __name__ == "__main__":
 
     sample_size = 2000
     batch_size = 1000
-    lr_G = 0.001
+    lr_G = 0.007
     lr_D = 0.001
 
     torch.manual_seed(42)
     np.random.seed(42)
 
-    run_experiment(sample_size, batch_size, lr_G, lr_D, 3000)
+    run_experiment(sample_size, batch_size, lr_G, lr_D, 2000)

@@ -3,9 +3,13 @@ from collections import defaultdict
 from .models.Generator import Generator, Generator_big
 from .modules.network_module import Detector, Encoder, Decoder
 from .modules.vanilla_vae import VanillaVAE
+from .modules.imagenetAutoencoder.models.builer import BuildAutoEncoder
+from .modules.imagenetAutoencoder.models.vgg import VGGAutoEncoder, get_configs
+from .modules.imagenetAutoencoder.train import do_train
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained
+from collections import OrderedDict
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
@@ -37,7 +41,7 @@ class VMMD:
         self.weight_decay = weight_decay
         self.path_to_directory = path_to_directory
         self.generator_optimizer = None
-        self.dataset = ""
+        self.dataset = "FASHION-MNIST"
         self.shape = (1, 32, 32)
         self.device = torch.device('cuda:0' if torch.cuda.is_available(
         ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
@@ -157,34 +161,64 @@ class VMMD:
 
         device = self.device
         print("get generator")
-        generator, _ = self.get_the_networks(
-            ndims, latent_size, device=device)
+        generator = self.get_the_networks(
+            X.shape[2]*X.shape[2], latent_size, device=device)
         
         print("get discriminator")
         print(X.flatten(1, -1).shape[1])
         print(ndims)
         print(channel)
         detector = Detector(X.flatten(1, -1).shape[1], ndims, channel, Encoder, Decoder)
+
+        #configs = get_configs('vgg16')
+
+        #detector = VGGAutoEncoder(configs=configs)
+
+        #checkpoint = torch.load(f"/mnt/simhomes/leuci/V-GAN/src/modules/imagenetAutoencoder/imagenet-vgg16.pth")
+        #state_dict = checkpoint['state_dict']
+
+        #new_state_dict = OrderedDict()
+        #for key, value in state_dict.items():
+        #    new_key = key.replace("module.", "")  # Remove "module." prefix
+        #    new_state_dict[new_key] = value
+
+        #detector.load_state_dict(new_state_dict)
+
+        #data_loader = DataLoader(
+        #            X, batch_size=self.batch_size, drop_last=True, pin_memory=cuda, shuffle=True)
+        #do_train(train_loader=data_loader, model=detector, optimizer=torch.optim.Adam, criterion=torch.nn.MSELoss(), epoch=50, args=None)
+
+        #encoder = detector.encoder
+        #decoder = detector.decoder
+        
+        #decoder.to('cuda').eval()
+        #encoder.to('cuda').eval()
+
+        #enc = encoder(X.to('cuda'))
+        #dec = decoder(enc)
+        #dec = dec.permute(0, 2, 3, 1).cpu().detach().numpy()
+        #plt.imshow(dec[0])
+        #plt.savefig('test.png')
+        #exit()
+
         #detector = VanillaVAE(channel, latent_size)
         #detector.to(device)
         
-        encoder = detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
-        decoder = detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
+        detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
+        detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
 
-        #Encoder = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
-        #Encoder.to(device)
-        #Encoder.eval()
-        #Decoder = Encoder.fc
-        #Decoder.to(device)
-        #Encoder.fc = torch.nn.Identity()
+        detector.encoder.eval()
 
-        #optimizer = torch.optim.Adadelta(
-        #    generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr, betas=(0.5, 0.999))
-        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=100, threshold=1e-3, threshold_mode='rel', eps=1e-50, verbose=True)
+        encoder = detector.encoder.to('cuda')
+
+        optimizer = torch.optim.Adadelta(
+            generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        #optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr, betas=(0.9, 0.999))
+        #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=100, threshold=1e-3, threshold_mode='rel', eps=1e-50, verbose=True)
         self.generator_optimizer = optimizer.__class__.__name__
-        # loss_function =  tts.MMDStatistic(self.batch_size, self.batch_size)
-        loss_function = MMDLossConstrained(weight=10)
+        #loss_function =  tts.MMDStatistic(self.batch_size, self.batch_size)
+        #loss_function = MMDLossConstrained(weight=10)
+        loss_function = MMDLoss()
 
         for epoch in range(epochs):
             print(f'\rEpoch {epoch} of {epochs}')
@@ -226,20 +260,18 @@ class VMMD:
                 optimizer.zero_grad()
                 fake_subspaces = generator(noise_tensor)
 
+                proj_batch = fake_subspaces[:, np.newaxis] * batch.unflatten(1, (shape[0], shape[1]*shape[2])) #[:, np.newaxis]
+                proj_batch_enc = encoder(proj_batch.unflatten(2, (shape[1], shape[2])).to('cuda'))
+
                 batch_enc = encoder(batch.unflatten(1, shape).to('cuda'))
 
-                proj_batch = fake_subspaces * batch_enc
-
-                proj_batch_dec = decoder(proj_batch.to('cuda'))
-
-                batch_loss = loss_function(batch.to('cuda').flatten(1, -1), proj_batch_dec.to('cuda').flatten(1, -1) + torch.less(
-                    batch, 1/batch.shape[1])*torch.mean(batch, dim=0), fake_subspaces)  # Constrained MMD Loss
-                self.bandwidth = loss_function.bandwidth
+                batch_loss = loss_function(batch_enc.to('cuda'), proj_batch_enc.to('cuda'))  # Constrained MMD Loss
+                #self.bandwidth = loss_function.bandwidth
                 batch_loss.backward()
                 optimizer.step()
                 generator_loss += float(batch_loss.to(
                     'cpu').detach().numpy())/batch_number
-            scheduler.step(generator_loss)
+            #scheduler.step(generator_loss)
 
             for param_group in optimizer.param_groups:
                 print(f"Epoch {epoch+1}, Learning Rate: {param_group['lr']}")
