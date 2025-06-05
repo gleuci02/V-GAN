@@ -6,6 +6,7 @@ from .modules.vanilla_vae import VanillaVAE
 from .modules.imagenetAutoencoder.models.builer import BuildAutoEncoder
 from .modules.imagenetAutoencoder.models.vgg import VGGAutoEncoder, get_configs
 from .modules.imagenetAutoencoder.train import do_train
+from skimage.restoration import denoise_bilateral
 import torch_two_sample as tts
 from .models.Mmd_loss import MMDLoss
 from .models.Mmd_loss_constrained import MMDLossConstrained
@@ -20,7 +21,7 @@ import matplotlib.pyplot as plt
 import os
 import operator
 import datetime
-
+import torch.nn.functional as F
 
 class VMMD:
     '''
@@ -30,7 +31,7 @@ class VMMD:
     kernel learning is performed. The default values for the kernel are
     '''
 
-    def __init__(self, batch_size=500, epochs=30, lr=0.007, momentum=0.99, seed=777, weight_decay=0.04, path_to_directory=None):
+    def __init__(self, batch_size=500, epochs=30, lr=0.007, momentum=0.99, seed=777, weight_decay=0.4, path_to_directory=None):
         self.storage = locals()
         self.train_history = defaultdict(list)
         self.batch_size = batch_size
@@ -137,10 +138,9 @@ class VMMD:
         return generator
 
     def fit(self, X):
-
         cuda = torch.cuda.is_available()
         mps = torch.backends.mps.is_available()
-
+        torch.autograd.set_detect_anomaly(True)
         torch.manual_seed(self.seed)
         torch.manual_seed(42)
         np.random.seed(42)
@@ -166,60 +166,19 @@ class VMMD:
         
         print("get discriminator")
         print(X.flatten(1, -1).shape[1])
+        print(latent_size)
         print(ndims)
         print(channel)
-        detector = Detector(X.flatten(1, -1).shape[1], ndims, channel, Encoder, Decoder)
 
-        #configs = get_configs('vgg16')
-
-        #detector = VGGAutoEncoder(configs=configs)
-
-        #checkpoint = torch.load(f"/mnt/simhomes/leuci/V-GAN/src/modules/imagenetAutoencoder/imagenet-vgg16.pth")
-        #state_dict = checkpoint['state_dict']
-
-        #new_state_dict = OrderedDict()
-        #for key, value in state_dict.items():
-        #    new_key = key.replace("module.", "")  # Remove "module." prefix
-        #    new_state_dict[new_key] = value
-
-        #detector.load_state_dict(new_state_dict)
-
-        #data_loader = DataLoader(
-        #            X, batch_size=self.batch_size, drop_last=True, pin_memory=cuda, shuffle=True)
-        #do_train(train_loader=data_loader, model=detector, optimizer=torch.optim.Adam, criterion=torch.nn.MSELoss(), epoch=50, args=None)
-
-        #encoder = detector.encoder
-        #decoder = detector.decoder
-        
-        #decoder.to('cuda').eval()
-        #encoder.to('cuda').eval()
-
-        #enc = encoder(X.to('cuda'))
-        #dec = decoder(enc)
-        #dec = dec.permute(0, 2, 3, 1).cpu().detach().numpy()
-        #plt.imshow(dec[0])
-        #plt.savefig('test.png')
-        #exit()
-
-        #detector = VanillaVAE(channel, latent_size)
-        #detector.to(device)
-        
-        detector.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{self.dataset}.pth"))
-        detector.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{self.dataset}.pth"))
-
-        detector.encoder.eval()
-
-        encoder = detector.encoder.to('cuda')
-
-        optimizer = torch.optim.Adadelta(
-            generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        #optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr, betas=(0.9, 0.999))
-        #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=100, threshold=1e-3, threshold_mode='rel', eps=1e-50, verbose=True)
+        #optimizer = torch.optim.Adadelta(
+        #    generator.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        optimizer = torch.optim.Adam(generator.parameters(), lr=self.lr, betas=(0.9, 0.999)) #1e-4
+        #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=50, threshold=1e-3, threshold_mode='rel', eps=1e-50, verbose=True)
         self.generator_optimizer = optimizer.__class__.__name__
         #loss_function =  tts.MMDStatistic(self.batch_size, self.batch_size)
         #loss_function = MMDLossConstrained(weight=10)
         loss_function = MMDLoss()
-
+        block = torch.ones((1, 1), device=self.device)
         for epoch in range(epochs):
             print(f'\rEpoch {epoch} of {epochs}')
             generator_loss = 0
@@ -260,14 +219,21 @@ class VMMD:
                 optimizer.zero_grad()
                 fake_subspaces = generator(noise_tensor)
 
-                proj_batch = fake_subspaces[:, np.newaxis] * batch.unflatten(1, (shape[0], shape[1]*shape[2])) #[:, np.newaxis]
-                proj_batch_enc = encoder(proj_batch.unflatten(2, (shape[1], shape[2])).to('cuda'))
+                newShape = int(np.sqrt(fake_subspaces.shape[1]))
 
-                batch_enc = encoder(batch.unflatten(1, shape).to('cuda'))
+                fake_subspaces = fake_subspaces.unflatten(1, (newShape, newShape))
 
-                batch_loss = loss_function(batch_enc.to('cuda'), proj_batch_enc.to('cuda'))  # Constrained MMD Loss
-                #self.bandwidth = loss_function.bandwidth
+                big_mask = torch.kron(fake_subspaces, block).flatten(1, -1).to(self.device)
+                proj_batch = big_mask[:, np.newaxis] * batch.unflatten(1, (shape[0], shape[1]*shape[2])) #[:, np.newaxis]
+
+                batch_loss = loss_function(batch.flatten(1, -1), proj_batch.flatten(1, -1).to(self.device))
+                self.bandwidth = loss_function.bandwidth
                 batch_loss.backward()
+
+                for name, param in generator.named_parameters():
+                    if param.grad is None:
+                        print(name, param.grad)
+
                 optimizer.step()
                 generator_loss += float(batch_loss.to(
                     'cpu').detach().numpy())/batch_number
@@ -275,7 +241,6 @@ class VMMD:
 
             for param_group in optimizer.param_groups:
                 print(f"Epoch {epoch+1}, Learning Rate: {param_group['lr']}")
-
 
             print(f"Average loss in the epoch: {generator_loss}")
             self.train_history["generator_loss"].append(generator_loss)
@@ -292,7 +257,7 @@ class VMMD:
             self.model_snapshot(path_to_directory, run_number, show=True)
 
         self.generator = generator
-        self.detector = detector
+        #self.detector = detector
 
     def generate_subspaces(self, nsubs):
         # Need to load in cpu as mps Tensor module doesn't properly fix the seed
@@ -301,7 +266,10 @@ class VMMD:
             torch.manual_seed(self.seed)
         noise_tensor.normal_()
         u = self.generator(noise_tensor.to(self.device))
+        print(u)
+        print(1/u.shape[1])
         u = torch.greater_equal(u, 1/u.shape[1])
+        #u = torch.greater_equal(u, 0.5)
         return u
 
 

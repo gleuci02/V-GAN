@@ -210,27 +210,40 @@ class Detector(nn.Module): #Using an ELM as the embedding worked for LUNAR and D
 class Generator_big(nn.Module):
     def __init__(self, latent_size, img_size):
         super(Generator_big, self).__init__()
+
         self.main = nn.Sequential(
-            nn.Linear(latent_size, 256 * 4 * 4),  # Expand latent space
-            nn.ReLU(),
-            nn.Unflatten(1, (256, 4, 4)),  # Reshape to (256, 4, 4)
-            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1),  # 4x4 -> 8x8
-            nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),  # 8x8 -> 16x16
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 3, kernel_size=4, stride=2, padding=1),  # 16x16 -> 32x32
+            nn.Linear(latent_size, 2*latent_size),
+            GaussianNoise(),
+            nn.BatchNorm1d(2*latent_size, eps=0.01),
+            nn.Tanh(),
+            nn.Linear(2*latent_size, 4*latent_size),
+            GaussianNoise(),
+            nn.BatchNorm1d(4*latent_size, eps=0.01),
+            nn.Tanh(),
+            nn.Linear(4*latent_size, 8*latent_size),
+            GaussianNoise(),
+            nn.BatchNorm1d(8*latent_size, eps=0.01),
+            nn.Tanh(),
+            nn.Linear(8*latent_size, 16*latent_size),
+            GaussianNoise(),
+            nn.BatchNorm1d(16*latent_size, eps=0.01),
+            nn.Tanh(),
+            nn.Linear(16*latent_size, img_size),
+            GaussianNoise(),
+            nn.BatchNorm1d(img_size, eps=0.01),
+            nn.Tanh(),
+            nn.Sigmoid(),
             upper_softmax(),
+            #nn.Softmax(),
         )
 
-    def forward(self, x):
-        res = self.main(x)
-        res = res.view(input.size(0), -1)
-        return res
+    def forward(self, z):
+        return self.main(z)
 
 class GaussianNoise(nn.Module):
     def __init__(self, std=0.1):
         super().__init__()
-        self.std = std
+        self.std = nn.Parameter(torch.tensor(std))
 
     def forward(self, x):
         if self.training:
@@ -274,44 +287,42 @@ class VGANHead(nn.Module):
     def __init__(self, latent_size=1024, img_size=1024):
         super().__init__()
         print("Hi I am VGANHead")
+
         self.main = nn.Sequential(
             nn.Linear(latent_size, 2*latent_size),
             GaussianNoise(std=0.1),
-            nn.BatchNorm1d(2*latent_size),
+            nn.BatchNorm1d(2*latent_size, eps=0.01),
             nn.LeakyReLU(0.2),
 
             nn.Linear(2*latent_size, 4*latent_size),
             GaussianNoise(std=0.1),
-            nn.BatchNorm1d(4*latent_size),
+            nn.BatchNorm1d(4*latent_size, eps=0.01),
             nn.LeakyReLU(0.2),
 
-            nn.Linear(4*latent_size, 6*latent_size),
+            nn.Linear(4*latent_size, 8*latent_size),
             GaussianNoise(std=0.1),
-            nn.BatchNorm1d(6*latent_size),
-            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(8*latent_size, eps=0.01),
+            nn.LeakyReLU(0.2), #0.2
 
-            nn.Linear(6*latent_size, 8*latent_size),
+            nn.Linear(8*latent_size, 16*latent_size),
             GaussianNoise(std=0.1),
-            nn.BatchNorm1d(8*latent_size),
-            nn.LeakyReLU(0.2),
-
-            nn.Linear(8*latent_size, 10*latent_size),
-            GaussianNoise(std=0.1),
-            nn.BatchNorm1d(10*latent_size),
+            nn.BatchNorm1d(16*latent_size, eps=0.01),
             nn.LeakyReLU(0.2),
         )
-
         
-        self.discr = BatchDiscrimination(10*latent_size, 50, 10)
+        self.discr = BatchDiscrimination(16*latent_size, 50, 10)
 
-        self.last_lin = nn.Linear(10*latent_size + 10, img_size) # + 10
+        self.last_lin = nn.Linear(16*latent_size + 10, img_size) # + 10    9*1024   / 4   9
     
-        self.act = nn.Tanh()
-        
-        
-    def forward(self, x):
+        self.act = nn.Sequential(
+            #nn.Sigmoid(),
+            upper_softmax(),
+            #nn.Softmax(dim=1),
+        )
 
-        x = self.main(x)
+    def forward(self, x):
+        x = self.main(x.flatten(1, -1))
+        
         batch_feats = self.discr(x)  # → (N, C)
         combined = torch.cat([x, batch_feats], dim=1)
         res = self.last_lin(combined)

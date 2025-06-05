@@ -3,15 +3,17 @@ import numpy as np
 from src.vgan import VGAN
 from src.vmmd import VMMD
 #from ..models.Detector import Detector, Encoder, Decoder
-from ..modules.network_module import Detector, Encoder, Decoder#, Generator_big
+from ..modules.network_module import Detector, Encoder, Decoder, Generator_big
 from .network_module import VGANHead
-from ..models.Generator import Generator_big, Generator
+#from ..models.Generator import Generator_big, Generator
 import torch_two_sample as tts
 from sklearn.preprocessing import normalize
 import torch
 from ..models.Mmd_loss_constrained import MMDLossConstrained
+from ..models.Mmd_loss import MMDLoss
 import pandas as pd
 from typing import Union
+import torch.nn.functional as F
 import logging
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,7 @@ class VGAN(VGAN):
             bandwidth = [bandwidth]
 
         if not hasattr(self, 'bandwidth'):
-            mmd_loss = MMDLossConstrained(0)
+            mmd_loss = MMDLoss(0)
             mmd_loss.forward(
                 x_sample, ux_sample, u_subspaces*1)
             self.bandwidth = mmd_loss.bandwidth
@@ -133,49 +135,48 @@ class VMMD(VMMD):
         assert count <= x_data.shape[0], "Selected 'count' is greater than the number of samples in the dataset"
         results = []
 
+        shape = x_data.shape
+
         x_data = x_data.reshape(x_data.shape[0], -1)
+
         print(x_data.shape)
-        
+
         x_data = normalize(x_data, axis=0)
         x_sample = torch.Tensor(pd.DataFrame(
-            x_data).sample(count).to_numpy()).to(self.device)
-        
+            x_data).sample(count).to_numpy()).to('cuda:0')
         u_subspaces = self.generate_subspaces(count)
 
-        x_sample = x_sample.unflatten(1, self.shape)
+        newShape = int(np.sqrt(u_subspaces.shape[1]))
 
-        print(x_sample.shape)
+        u_subspaces = u_subspaces.unflatten(1, (newShape, newShape)).unsqueeze(1)
 
-        x_sample_enc = self.detector.encoder(x_sample)
+        u_subspaces = F.interpolate(u_subspaces.float(), scale_factor=(2,2), mode='bilinear') #4/3
 
-        ux_sample_enc = u_subspaces * \
-            torch.Tensor(x_sample_enc).to(self.device) + \
-            torch.mean(x_sample_enc, dim=0)*(~u_subspaces)
-        
-        ux_sample_dec = self.detector.decoder(ux_sample_enc)
+        u_subspaces = u_subspaces.bool().flatten(1, -1)
 
+        ux_sample = u_subspaces[:, np.newaxis] * torch.Tensor(x_sample).to(self.device).unflatten(1, (shape[1], shape[2]*shape[2]))
         if type(bandwidth) == float:
             bandwidth = [bandwidth]
 
-        if not hasattr(self, 'bandwidth'):
-            mmd_loss = MMDLossConstrained(0)
-            mmd_loss.forward(
-                x_sample, ux_sample_dec, u_subspaces*1)
-            self.bandwidth = mmd_loss.bandwidth
-
         x_sample = x_sample.flatten(1, -1)
-        ux_sample_dec = ux_sample_dec.flatten(1, -1)
+        ux_sample = ux_sample.flatten(1, -1)
+
+        if not hasattr(self, 'bandwidth'):
+            mmd_loss = MMDLoss(0)
+            mmd_loss.forward(
+                x_sample, ux_sample, u_subspaces*1)
+            self.bandwidth = mmd_loss.bandwidth
 
         bandwidth.sort()
         for bw in bandwidth:
             mmd = tts.MMDStatistic(count, count)
-            _, distances = mmd(x_sample, ux_sample_dec, alphas=[
+            _, distances = mmd(x_sample, ux_sample, alphas=[
                 bw], ret_matrix=True)
             results.append(mmd.pval(distances))
 
         bw = self.bandwidth.item()
         mmd = tts.MMDStatistic(count, count)
-        _, distances = mmd(x_sample, ux_sample_dec, alphas=[
+        _, distances = mmd(x_sample, ux_sample, alphas=[
             bw], ret_matrix=True)
         results.append(mmd.pval(distances))
 
