@@ -51,8 +51,29 @@ def numeric_to_boolean(num_array, n_features):
     #return result, proba
 
 def reduce_subspaces(u, proba):
-    sorted_vectors = sorted(u.tolist(), key=lambda v: sum(v), reverse=True)
-    result = u.tolist()
+
+    u = u.tolist()
+
+    filtered = []
+    proba_filtered = []
+    i = 0
+    for v in u:
+        p_true = sum(1 for x in v if x) / len(v)
+        print(p_true)
+        p_false = 1 - p_true
+        print(p_false)
+        # If ≥ 95% are True OR ≥ 95% are False, skip; otherwise keep
+        if p_true >= 0.90 or p_false >= 0.90:
+            # exclude this vector
+            print("IF STATEMENT")
+            continue
+        filtered.append(v)
+        proba_filtered.append(proba[i])
+        i += 1
+
+    sorted_vectors = sorted(filtered, key=lambda v: sum(v), reverse=True)
+
+    result = filtered
     indices_to_remove = set()
 
     for i, v in enumerate(result):

@@ -14,6 +14,7 @@ from pathlib import Path
 from torch.utils.data import DataLoader, Subset
 from src.modules.od_module import VGAN, VMMD
 import matplotlib.pyplot as plt
+from src.cluster.SNNDPC import SNNDPC
 import numpy as np
 import torch
 import datetime
@@ -29,13 +30,14 @@ path = "results/results_latentSpace/"
 
 ALGORITHMS = {
     "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors', n_neighbors=5)
+    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors'),
+    #"SNNDPC": SNNDPC(n_clusters=10, k=10), #Shared-Nearest-Neighbor-Based Clustering by Fast Search and Find of Density Peaks
 }
 
 DATASETS = {
-    "CALTECH101": load_caltech101,
+    "CALTECH101": load_caltech101, #TODO run caltech 101 again
     "MNIST": load_mnist,
     "CIFAR10": load_cifar10,
     "STL10": load_stl10,
@@ -160,7 +162,7 @@ def vgan_training(vgan, X_train):
     return torch.tensor(subspaces).cpu()
 
 def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
-       
+        timenow = datetime.datetime.now()
         datasets = []
         total_times = []
         nmis = []
@@ -177,7 +179,6 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
         # Load dataset
         for i, dataset in enumerate(DATASETS):
-                #vgan = VGAN(epochs = epoch, temperature=10, batch_size=batch_size, path_to_directory=Path()/ "experiments" / f"Example_dataset_{datetime.datetime.now()}", iternum_d=1, iternum_g=5,lr_G = lr_G, lr_D = lr_Ds)
                 vgan = VMMD(epochs=epoch, path_to_directory=Path() / "experiments" /f"Example_normal_{datetime.datetime.now()}_vmmd", lr=lr_G)
                 vgan.seed = 42
                 torch.manual_seed(42)
@@ -202,46 +203,32 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 X_train, y_train = next(iter(dataloader_train))
                 #X_test, y_test = next(iter(dataloader_test))
                 
-                latent_size = 128#max(int(X_train.flatten(1, -1).shape[1]/16), 1) #X_train.flatten(1, -1).shape[1] #
-                ndims = X_train.shape[2]
-                channel = X_train.shape[1]
-
-                #autoencoder = Detector(latent_size, ndims, channel, Encoder, Decoder)
-                #autoencoder.to('cuda')
-                #autoencoder = pretrain_autoencoder(autoencoder, dataloader_train, epochs=50, lr=0.002)
-
-                #torch.save(autoencoder.encoder.state_dict(), f"./AE_Weights/encoder_weights_{dataset}.pth")
-                #torch.save(autoencoder.decoder.state_dict(), f"./AE_Weights/decoder_weights_{dataset}.pth")
-                
-                #autoencoder.encoder.load_state_dict(torch.load(f"./AE_Weights/encoder_weights_{dataset}.pth"))
-                #autoencoder.decoder.load_state_dict(torch.load(f"./AE_Weights/decoder_weights_{dataset}.pth"))
-
                 # Call visualization function
-
                 #visualize_reconstruction(autoencoder, dataloader_train)
                 
                 shape = X_train.shape
 
                 #------Preprosessing with VGAN-----#
-                subspaces = vgan_training(vgan, X_train)
+                #subspaces = vgan_training(vgan, X_train)
                 print(shape)
 
-                #np.random.seed(42)
-                #n_features = X_train.shape[1]
-                #n_models = 3  # Number of classifiers
-                #feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
+                #Feature Bagging
+                np.random.seed(42)
+                n_features = X_train.shape[1] * X_train.shape[1]
+                n_models = 3  # Number of classifiers
+                feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
 
-                plot_subspaces(vgan, X_train, subspaces, dataset, shape[1:])
+                #plot_subspaces(vgan, X_train, subspaces, dataset, shape[1:])
+
                 #test = vgan.check_if_myopic(X_train.detach().numpy(), [vgan.bandwidth.cpu()], len(X_train))
                 #test.to_csv(f'{path}ifmyopic{dataset}.csv')
                 #print(f'{path}ifmyopic{dataset}.csv')
                 #print(test)
 
-
                 plt.clf()
                 plt.figure(figsize=(20, 6))
                 plt.plot(vgan.train_history["generator_loss"])
-                plt.savefig(f'{path}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
+                plt.savefig(f'{path}{timenow}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
                 
                 print(vgan.generator)
                 print(lr_G)
@@ -260,11 +247,14 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     algorithm = ALGORITHMS[name]
 
                     if dataset == "CIFAR100":
-                         algorithm.set_params(n_clusters=100)
+                        algorithm.set_params(n_clusters=100)
+                    elif dataset == "CALTECH101":
+                        algorithm.set_params(n_clusters=101)
 
                     amount_cluster = algorithm.get_params()["n_clusters"]
 
-                    for subspace in subspaces:
+                    #for subspace in subspaces:
+                    for subspace in feature_masks:
                         
                         starting_time = time.time()
                         # Initialize algorithm
@@ -273,6 +263,8 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                         X_new = X_train * subspace
                         X_new = torch.flatten(X_new, 1, -1)
 
+                        print(dataset)
+                        print(name)
                         y_pred = algorithm.fit_predict(X_new)
 
                         clusterings.append(y_pred)
@@ -320,9 +312,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
         })
 
         #df.to_csv(f'FB_Ensemble_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
-        df.to_csv(f'{path}_ReducedSS_{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
-
-        #final_cluster = generate_clustering_ensemble(clusterings, amount_cluster)
+        df.to_csv(f'{path}{timenow}_ReducedSS_{epoch}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
         acc = clustering_accuracy(y_train, final_cluster)
         nmi = normalized_mutual_info_score(y_train, final_cluster)
@@ -337,7 +327,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
         print(f"CURRENTLY WORKING FOR {dataset}")
 
-        df.to_csv(f'{path}_ALLACC_ReducedSS_epoch{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
+        df.to_csv(f'{path}{timenow}_ALLACC_ReducedSS_epoch{epoch}_s{sample_size}_b{batch_size}_lr_G{lr_G}lr_D{lr_D}.csv')
 
 if __name__ == "__main__":
 
