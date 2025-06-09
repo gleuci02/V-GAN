@@ -29,20 +29,20 @@ from skimage import io, morphology, util
 path = "results/results_latentSpace/"
 
 ALGORITHMS = {
-    "kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
-    #"SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
-    #"Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
-    "Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors'),
-    #"SNNDPC": SNNDPC(n_clusters=10, k=10), #Shared-Nearest-Neighbor-Based Clustering by Fast Search and Find of Density Peaks
+    #"kmeans": cluster.KMeans(n_clusters=10), #mini batch kmeans?
+    "SSC_OMP": SparseSubspaceClusteringOMP(n_clusters=10,affinity='symmetrize',n_nonzero=5,thr=1.0e-5),
+    "Elastic": ElasticNetSubspaceClustering(n_clusters=10,affinity='nearest_neighbors',algorithm='spams',active_support=True,gamma=200,tau=0.9),
+    #"Spectral_clustering": cluster.SpectralClustering(n_clusters=10, affinity='nearest_neighbors'),
+    "SNNDPC": SNNDPC(n_clusters=10, k=10), #Shared-Nearest-Neighbor-Based Clustering by Fast Search and Find of Density Peaks
 }
 
 DATASETS = {
     "CALTECH101": load_caltech101, #TODO run caltech 101 again
-    "MNIST": load_mnist,
-    "CIFAR10": load_cifar10,
+    #"MNIST": load_mnist,
+    #"CIFAR10": load_cifar10,
     "STL10": load_stl10,
-    "CIFAR100": load_cifar100,
-    "FASHION_MNIST": load_fashion_mnist,
+    #"CIFAR100": load_cifar100,
+    #"FASHION_MNIST": load_fashion_mnist,
     #"vials": load_vials,
     #"fruit_jelly": load_fruit_jelly,
 }
@@ -209,26 +209,26 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                 shape = X_train.shape
 
                 #------Preprosessing with VGAN-----#
-                #subspaces = vgan_training(vgan, X_train)
+                subspaces = vgan_training(vgan, X_train)
                 print(shape)
 
                 #Feature Bagging
-                np.random.seed(42)
-                n_features = X_train.shape[1] * X_train.shape[1]
-                n_models = 3  # Number of classifiers
-                feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(n_models)]
+                #np.random.seed(42)
+                #n_features = X_train.shape[2] * X_train.shape[3]
+                #feature_masks = [np.random.choice([0, 1], size=n_features, p=[0.5, 0.5]) for _ in range(30)]
+                #feature_masks = torch.Tensor(feature_masks)
 
-                #plot_subspaces(vgan, X_train, subspaces, dataset, shape[1:])
+                plot_subspaces(vgan, X_train, subspaces, dataset, shape[1:])
 
                 #test = vgan.check_if_myopic(X_train.detach().numpy(), [vgan.bandwidth.cpu()], len(X_train))
                 #test.to_csv(f'{path}ifmyopic{dataset}.csv')
                 #print(f'{path}ifmyopic{dataset}.csv')
                 #print(test)
 
-                plt.clf()
-                plt.figure(figsize=(20, 6))
-                plt.plot(vgan.train_history["generator_loss"])
-                plt.savefig(f'{path}{timenow}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
+                #plt.clf()
+                #plt.figure(figsize=(20, 6))
+                #plt.plot(vgan.train_history["generator_loss"])
+                #plt.savefig(f'{path}{timenow}VGAN_GLOSS_{dataset}_ReducedSS_Smaller_NN_epoch{epoch}_b{batch_size}_lr_G{lr_G}lr_D.png', dpi=300)
                 
                 print(vgan.generator)
                 print(lr_G)
@@ -254,7 +254,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
                     amount_cluster = algorithm.get_params()["n_clusters"]
 
                     #for subspace in subspaces:
-                    for subspace in feature_masks:
+                    for subspace in subspaces:
                         
                         starting_time = time.time()
                         # Initialize algorithm
@@ -331,7 +331,7 @@ def run_experiment(sample_size, batch_size, lr_G, lr_Ds, epoch):
 
 if __name__ == "__main__":
 
-    sample_size = 2000
+    sample_size = 200000
     batch_size = 1000
     lr_G = [0.007]
     lrates = [1, 0.1, 0.01, 0.001, 0.0001, 0.00001]
