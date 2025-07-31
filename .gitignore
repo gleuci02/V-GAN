@@ -166,6 +166,21 @@ experiments/
 # Test notebook for mps/cuda compatibility
 src/test.ipynb
 
+#Data, cache and vscode
+data/datasets
+data/elki
+.DS_Store
+.vscode/
+
+#Extra packages and repositories downloaded
+src/packages/
+
+# datasets
+*.csv
+#generated images
+*.png
+*.jpg
+=======
 data/
 .DS_Store
 .vscode/
