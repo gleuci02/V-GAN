@@ -137,29 +137,23 @@ class VMMD(VMMD):
 
         shape = x_data.shape
 
-        x_data = x_data.reshape(x_data.shape[0], -1)
-
-        print(x_data.shape)
-
-        x_data = normalize(x_data, axis=0)
+        x_data = normalize(x_data.reshape(shape[0], -1), axis=0)
         x_sample = torch.Tensor(pd.DataFrame(
             x_data).sample(count).to_numpy()).to('cuda:0')
         u_subspaces = self.generate_subspaces(count)
 
-        newShape = int(np.sqrt(u_subspaces.shape[1]))
+        ux_sample = u_subspaces[:, np.newaxis] * x_sample.unflatten(1, (shape[1], shape[2]*shape[3]))
 
-        u_subspaces = u_subspaces.unflatten(1, (newShape, newShape)).unsqueeze(1)
+        print(ux_sample.shape)
 
-        u_subspaces = F.interpolate(u_subspaces.float(), scale_factor=(2,2), mode='bilinear') #4/3
-
-        u_subspaces = u_subspaces.bool().flatten(1, -1)
-
-        ux_sample = u_subspaces[:, np.newaxis] * torch.Tensor(x_sample).to(self.device).unflatten(1, (shape[1], shape[2]*shape[2]))
         if type(bandwidth) == float:
             bandwidth = [bandwidth]
 
         x_sample = x_sample.flatten(1, -1)
         ux_sample = ux_sample.flatten(1, -1)
+
+        print(x_sample.shape)
+        print(ux_sample.shape)
 
         if not hasattr(self, 'bandwidth'):
             mmd_loss = MMDLoss(0)
@@ -174,7 +168,7 @@ class VMMD(VMMD):
                 bw], ret_matrix=True)
             results.append(mmd.pval(distances))
 
-        bw = self.bandwidth.item()
+        bw = self.bandwidth
         mmd = tts.MMDStatistic(count, count)
         _, distances = mmd(x_sample, ux_sample, alphas=[
             bw], ret_matrix=True)

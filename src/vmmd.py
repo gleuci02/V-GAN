@@ -142,8 +142,8 @@ class VMMD:
         mps = torch.backends.mps.is_available()
         torch.autograd.set_detect_anomaly(True)
         torch.manual_seed(self.seed)
-        torch.manual_seed(42)
-        np.random.seed(42)
+        torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
         if cuda:
             torch.cuda.manual_seed(self.seed)
         elif mps:
@@ -254,6 +254,7 @@ class VMMD:
             run_number = int(len(os.listdir(path_to_directory/'models')))
             torch.save(generator.state_dict(),
                        path_to_directory/'models'/f'generator_{run_number}.pt')
+            #torch.onnx.export(generator, X.to('cuda'), f'{run_number}.onnx', input_names=['noise'], output_names=['lens'])
             self.model_snapshot(path_to_directory, run_number, show=True)
 
         self.generator = generator
@@ -266,10 +267,8 @@ class VMMD:
             torch.manual_seed(self.seed)
         noise_tensor.normal_()
         u = self.generator(noise_tensor.to(self.device))
-        print(u)
-        print(1/u.shape[1])
         u = torch.greater_equal(u, 1/u.shape[1])
-        #u = torch.greater_equal(u, 0.5)
+        #u = torch.greater_equal(u, 0.99)
         return u
 
 

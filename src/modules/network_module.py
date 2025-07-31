@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from ..models.Generator import upper_softmax, upper_lower_softmax
 import numpy as np
+from torch.nn.utils import spectral_norm
 
 """Module to add addtional networks for VGAN
 
@@ -310,7 +311,7 @@ class VGANHead(nn.Module):
             nn.LeakyReLU(0.2),
         )
         
-        self.discr = BatchDiscrimination(16*latent_size, 50, 10)
+        self.discr = BatchDiscrimination(16*latent_size, 50, 10) # 50, 10
 
         self.last_lin = nn.Linear(16*latent_size + 10, img_size) # + 10    9*1024   / 4   9
     

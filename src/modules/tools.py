@@ -52,6 +52,7 @@ def numeric_to_boolean(num_array, n_features):
 
 def reduce_subspaces(u, proba):
 
+    print(u.shape)
     u = u.tolist()
 
     filtered = []
@@ -59,11 +60,9 @@ def reduce_subspaces(u, proba):
     i = 0
     for v in u:
         p_true = sum(1 for x in v if x) / len(v)
-        print(p_true)
         p_false = 1 - p_true
-        print(p_false)
         # If ≥ 95% are True OR ≥ 95% are False, skip; otherwise keep
-        if p_true >= 0.90 or p_false >= 0.90:
+        if p_true >= 0.95 or p_false >= 0.95:
             # exclude this vector
             print("IF STATEMENT")
             continue
@@ -77,23 +76,23 @@ def reduce_subspaces(u, proba):
     indices_to_remove = set()
 
     for i, v in enumerate(result):
-        for j in range(i, len(sorted_vectors)):  # Iterate over indices instead
-            if j in indices_to_remove:
+        for j in range(i + 1, len(sorted_vectors)):  # Iterate over indices instead
+            if i in indices_to_remove:
                 continue  # Skip already removed indices
 
             v2 = sorted_vectors[j]
             result_vector = [a or b for a, b in zip(v, v2)]
 
             if result_vector in sorted_vectors:
-                indices_to_remove.add(j)
-                proba[i] += proba[j]  # Accumulate probability
+                indices_to_remove.add(i)
+                proba_filtered[i] += proba_filtered[j]  # Accumulate probability
 
     # Remove elements after iteration
     sorted_vectors = [vec for idx, vec in enumerate(sorted_vectors) if idx not in indices_to_remove]
     result = [vec for idx, vec in enumerate(result) if idx not in indices_to_remove]
-    proba = np.delete(proba, list(indices_to_remove))
+    proba_filtered = np.delete(proba_filtered, list(indices_to_remove))
 
-    return result, proba
+    return result, proba_filtered
 
 
 def pretrain_autoencoder(detector, dataloader, epochs=10, lr=0.001, device='cuda'):
