@@ -23,6 +23,7 @@ import operator
 import datetime
 import torch.nn.functional as F
 
+
 class VMMD:
     '''
     V-MMD, a Subspace-Generative Moment Matching Network.
@@ -31,7 +32,9 @@ class VMMD:
     kernel learning is performed. The default values for the kernel are
     '''
 
+
     def __init__(self, batch_size=500, epochs=30, lr=0.007, momentum=0.99, seed=777, weight_decay=0.4, path_to_directory=None):
+
         self.storage = locals()
         self.train_history = defaultdict(list)
         self.batch_size = batch_size
@@ -44,6 +47,7 @@ class VMMD:
         self.generator_optimizer = None
         self.dataset = "FASHION-MNIST"
         self.shape = (1, 32, 32)
+
         self.device = torch.device('cuda:0' if torch.cuda.is_available(
         ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
 
@@ -103,6 +107,7 @@ class VMMD:
         self.__plot_loss(path_to_directory, show)
 
     def load_models(self, path_to_generator, ndims, latent_size, device: str = None):
+
         '''Loads models for prediction
 
         In case that the generator has already been trained, this method allows to load it (and optionally the discriminator) for generating subspaces
@@ -113,6 +118,7 @@ class VMMD:
         if device == None:
             device = self.device
         self.generator = Generator_big(
+
             img_size=ndims, latent_size=latent_size)
         self.generator.load_state_dict(torch.load(
             path_to_generator, map_location=device))
@@ -144,6 +150,7 @@ class VMMD:
         torch.manual_seed(self.seed)
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
+
         if cuda:
             torch.cuda.manual_seed(self.seed)
         elif mps:
@@ -160,6 +167,7 @@ class VMMD:
         channel = X.shape[1]
 
         device = self.device
+
         print("get generator")
         generator = self.get_the_networks(
             X.shape[2]*X.shape[2], latent_size, device=device)
@@ -237,10 +245,12 @@ class VMMD:
                 optimizer.step()
                 generator_loss += float(batch_loss.to(
                     'cpu').detach().numpy())/batch_number
+
             #scheduler.step(generator_loss)
 
             for param_group in optimizer.param_groups:
                 print(f"Epoch {epoch+1}, Learning Rate: {param_group['lr']}")
+
 
             print(f"Average loss in the epoch: {generator_loss}")
             self.train_history["generator_loss"].append(generator_loss)
@@ -254,6 +264,7 @@ class VMMD:
             run_number = int(len(os.listdir(path_to_directory/'models')))
             torch.save(generator.state_dict(),
                        path_to_directory/'models'/f'generator_{run_number}.pt')
+
             #torch.onnx.export(generator, X.to('cuda'), f'{run_number}.onnx', input_names=['noise'], output_names=['lens'])
             self.model_snapshot(path_to_directory, run_number, show=True)
 
@@ -263,12 +274,15 @@ class VMMD:
     def generate_subspaces(self, nsubs):
         # Need to load in cpu as mps Tensor module doesn't properly fix the seed
         noise_tensor = torch.Tensor(nsubs, self.__latent_size).to('cuda')
+
         if not self.seed == None:
             torch.manual_seed(self.seed)
         noise_tensor.normal_()
         u = self.generator(noise_tensor.to(self.device))
         u = torch.greater_equal(u, 1/u.shape[1])
+
         #u = torch.greater_equal(u, 0.99)
+
         return u
 
 

@@ -7,7 +7,10 @@ class RBF(nn.Module):
 
     def __init__(self, n_kernels=5, mul_factor=2.0, bandwidth=None):
         super().__init__()
-        self.bandwidth_multipliers = mul_factor ** (torch.arange(n_kernels) - n_kernels // 2).to('cuda')
+        device = torch.device('cuda:0' if torch.cuda.is_available(
+        ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
+        self.bandwidth_multipliers = mul_factor ** (
+            torch.arange(n_kernels) - n_kernels // 2).to(device)
         self.bandwidth = bandwidth
 
     def get_bandwidth(self, L2_distances):
@@ -31,6 +34,9 @@ class MMDLossConstrained(nn.Module):
         super().__init__()
         self.kernel = kernel
         self.weight = weight
+        self.device = torch.device('cuda:0' if torch.cuda.is_available(
+        ) else 'mps:0' if torch.backends.mps.is_available() else 'cpu')
+
 
     def forward(self, X, Y, U):
         K = self.kernel(torch.vstack([X, Y]))
@@ -41,5 +47,4 @@ class MMDLossConstrained(nn.Module):
         XY = K[:X_size, X_size:].mean()
         YY = K[X_size:, X_size:].mean()
 
-        return XX - 2 * XY + YY + self.weight*(torch.mean(torch.ones(U.shape[1]).to('cuda') - torch.topk(U, 1, 0).values))
- 
+        return XX - 2 * XY + YY + self.weight*(torch.mean(torch.ones(U.shape[1]).to(self.device) - torch.topk(U, 1, 0).values))

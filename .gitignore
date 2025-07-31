@@ -180,3 +180,7 @@ src/packages/
 #generated images
 *.png
 *.jpg
+=======
+data/
+.DS_Store
+.vscode/
