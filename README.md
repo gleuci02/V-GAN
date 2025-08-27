@@ -7,9 +7,7 @@ Fork of Repository for the V-GAN algorithm in paper "Adversarial Subspace Genera
 
 The Framework proposed in the paper has been used for my Bachelor Thesis "Subspace Clustering via Subspace Generation".
 
-Our proposed algorithm, V-GAN, is capable of identifying a collection of subspaces relevant to a studied population $\mathbf{X}$. We do so by building on a theoretical framework that explains the _Multiple Views_ phenomenom of data. 
-Details of this will be added in the future, alongside a pre-print version of the paper.
-
+The proposed algorithm, V-GAN from the mentioned paper, is capable of identifying a collection of subspaces relevant to a studied population $\mathbf{X}$. It does so by building on a theoretical framework that explains the _Multiple Views_ phenomenom of data. 
 
 # Installation
 
